@@ -112,6 +112,9 @@ pyrcc5 -o anylabeling/resources/resources.py anylabeling/resources/resources.qrc
 ```bash
 python anylabeling/app.py
 ```
+'''
+python -m anylabeling.app
+'''
 
 ## Build executable
 

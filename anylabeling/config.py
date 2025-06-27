@@ -63,8 +63,16 @@ def validate_config_item(key, value):
         raise ValueError(f"Unexpected value for config key 'shape_color': {value}")
     if key == "labels" and value is not None and len(value) != len(set(value)):
         raise ValueError(f"Duplicates are detected for config key 'labels': {value}")
+    if key == "label_sets" and value is not None and not isinstance(value, dict):
+        raise ValueError("label_sets must be a dictionary")
     if key == "theme" and value not in ["system", "light", "dark"]:
         raise ValueError(f"Unexpected value for config key 'theme': {value}")
+    if key == "line_width" and (not isinstance(value, int) or value <= 0):
+        raise ValueError("line_width must be a positive integer")
+    if key == "fill_opacity" and (
+            not isinstance(value, int) or not 0 <= value <= 255
+    ):
+        raise ValueError("fill_opacity must be an integer from 0 to 255")
 
 
 def get_config(config_file_or_yaml=None, config_from_args=None):

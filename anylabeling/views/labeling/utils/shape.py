@@ -6,6 +6,7 @@ import PIL.Image
 import PIL.ImageDraw
 
 from ..logger import logger
+from ..shape import Shape
 
 
 def polygons_to_mask(img_shape, polygons, shape_type=None):
@@ -15,10 +16,14 @@ def polygons_to_mask(img_shape, polygons, shape_type=None):
     return shape_to_mask(img_shape, points=polygons, shape_type=shape_type)
 
 
-def shape_to_mask(img_shape, points, shape_type=None, line_width=10, point_size=5):
+def shape_to_mask(
+    img_shape, points, shape_type=None, line_width=None, point_size=5
+):
     mask = np.zeros(img_shape[:2], dtype=np.uint8)
     mask = PIL.Image.fromarray(mask)
     draw = PIL.ImageDraw.Draw(mask)
+    if line_width is None:
+        line_width = Shape.line_width
     xy = [tuple(point) for point in points]
     if shape_type == "circle":
         assert len(xy) == 2, "Shape of shape_type=circle must have 2 points"
