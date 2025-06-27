@@ -31,6 +31,7 @@ class LabelFile:
         self.shapes = []
         self.image_path = None
         self.image_data = None
+        self.image_labels = []
         if filename is not None:
             self.load(filename)
         self.filename = filename
@@ -68,7 +69,7 @@ class LabelFile:
             "imageWidth",
         ]
         shape_keys = [
-            "label",
+            "labels",
             "text",
             "points",
             "group_id",
@@ -95,9 +96,14 @@ class LabelFile:
                 data.get("imageHeight"),
                 data.get("imageWidth"),
             )
-            shapes = [
-                {
-                    "label": s["label"],
+            shapes = []
+            for s in data["shapes"]:
+                labels = s.get("labels")
+                if labels is None:
+                    label = s.get("label", "")
+                    labels = [label] if label else []
+                shape_dict = {
+                    "labels": labels,
                     "text": s.get("text", ""),
                     "points": s["points"],
                     "shape_type": s.get("shape_type", "polygon"),
@@ -105,8 +111,7 @@ class LabelFile:
                     "group_id": s.get("group_id"),
                     "other_data": {k: v for k, v in s.items() if k not in shape_keys},
                 }
-                for s in data["shapes"]
-            ]
+                shapes.append(shape_dict)
         except Exception as e:  # noqa
             raise LabelFileError(e) from e
 
@@ -117,7 +122,9 @@ class LabelFile:
 
         # Add new fields if not available
         other_data["text"] = other_data.get("text", "")
-
+        self.image_labels = data.get("imageLabels", [])
+        if not self.image_labels and data.get("imageLabel"):
+            self.image_labels = [data.get("imageLabel")]
         # Only replace data after everything is loaded.
         self.flags = flags
         self.shapes = shapes
@@ -172,6 +179,8 @@ class LabelFile:
             "imageHeight": image_height,
             "imageWidth": image_width,
         }
+        if self.image_labels:
+            data["imageLabels"] = self.image_labels
         for key, value in other_data.items():
             assert key not in data
             data[key] = value

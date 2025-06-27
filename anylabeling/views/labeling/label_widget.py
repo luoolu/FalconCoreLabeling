@@ -96,6 +96,10 @@ class LabelingWidget(LabelDialog):
         Shape.hvertex_fill_color = QtGui.QColor(
             *self._config["shape"]["hvertex_fill_color"]
         )
+        Shape.line_width = self._config["shape"].get("line_width", 2)
+        Shape.fill_opacity = self._config["shape"].get("fill_opacity", Shape.fill_color.alpha())
+        Shape.fill_color.setAlpha(Shape.fill_opacity)
+        Shape.select_fill_color.setAlpha(Shape.fill_opacity)
 
         # Set point size from config file
         Shape.point_size = self._config["shape"]["point_size"]
@@ -216,12 +220,7 @@ class LabelingWidget(LabelDialog):
         self.unique_label_list.setToolTip(
             self.tr("Select label to start annotating for it. Press 'Esc' to deselect.")
         )
-        if self._config["labels"]:
-            for label in self._config["labels"]:
-                item = self.unique_label_list.create_item_from_label(label)
-                self.unique_label_list.addItem(item)
-                rgb = self._get_rgb_by_label(label)
-                self.unique_label_list.set_item_label(item, label, rgb)
+        self.update_unique_label_list()
         self.label_dock = QtWidgets.QDockWidget(self.tr("Labels"), self.main_window)
         self.label_dock.setObjectName("Labels")
         self.label_dock.setFeatures(features)
@@ -249,6 +248,17 @@ class LabelingWidget(LabelDialog):
         self.main_window.addDockWidget(Qt.RightDockWidgetArea, self.file_dock)
 
         self.zoom_widget = ZoomWidget()
+        self.line_width_spinbox = QtWidgets.QSpinBox()
+        self.line_width_spinbox.setRange(1, 10)
+        self.line_width_spinbox.setValue(Shape.line_width)
+        self.line_width_spinbox.setToolTip(self.tr("Line Width"))
+        self.line_width_spinbox.valueChanged.connect(self.line_width_changed)
+
+        self.fill_opacity_slider = QtWidgets.QSlider(Qt.Horizontal)
+        self.fill_opacity_slider.setRange(0, 255)
+        self.fill_opacity_slider.setValue(Shape.fill_opacity)
+        self.fill_opacity_slider.setToolTip(self.tr("Mask Opacity"))
+        self.fill_opacity_slider.valueChanged.connect(self.fill_opacity_changed)
         self.setAcceptDrops(True)
 
         self.canvas = self.label_list.canvas = Canvas(
@@ -622,6 +632,13 @@ class LabelingWidget(LabelDialog):
             "Adjust brightness and contrast",
             enabled=False,
         )
+        line_width_act = QtWidgets.QWidgetAction(self)
+        line_width_act.setDefaultWidget(self.line_width_spinbox)
+        self.line_width_spinbox.setEnabled(True)
+
+        fill_opacity_act = QtWidgets.QWidgetAction(self)
+        fill_opacity_act.setDefaultWidget(self.fill_opacity_slider)
+        self.fill_opacity_slider.setEnabled(True)
         show_cross_line = create_action(
             self.tr("&Show Cross Line"),
             self.enable_show_cross_line,
@@ -758,6 +775,13 @@ class LabelingWidget(LabelDialog):
             self.tr("Modify the label of the selected polygon"),
             enabled=False,
         )
+        set_image_label = create_action(
+            self.tr("Set Image Label"),
+            self.edit_image_label,
+            None,
+            "tag",
+            self.tr("Set label for the entire image"),
+        )
 
         fill_drawing = create_action(
             self.tr("Fill Drawing Polygon"),
@@ -805,6 +829,7 @@ class LabelingWidget(LabelDialog):
             undo_last_point=undo_last_point,
             undo=undo,
             remove_point=remove_point,
+            set_image_label=set_image_label,
             create_mode=create_mode,
             edit_mode=edit_mode,
             create_rectangle_mode=create_rectangle_mode,
@@ -819,6 +844,8 @@ class LabelingWidget(LabelDialog):
             keep_prev_scale=keep_prev_scale,
             fit_window=fit_window,
             fit_width=fit_width,
+            line_width=line_width_act,
+            fill_opacity=fill_opacity_act,
             brightness_contrast=brightness_contrast,
             show_cross_line=show_cross_line,
             show_groups=show_groups,
@@ -841,6 +868,8 @@ class LabelingWidget(LabelDialog):
                 None,
                 toggle_keep_prev_mode,
                 toggle_auto_use_last_label_mode,
+                None,
+                set_image_label,
             ),
             # menu shown at right click
             menu=(
@@ -905,6 +934,7 @@ class LabelingWidget(LabelDialog):
             view=self.menu(self.tr("&View")),
             language=self.menu(self.tr("&Language")),
             theme=self.menu(self.tr("&Theme")),
+            label_sets=self.menu(self.tr("&Label Sets")),
             tools=self.menu(self.tr("&Tools")),
             help=self.menu(self.tr("&Help")),
             recent_files=QtWidgets.QMenu(self.tr("Open &Recent")),
@@ -964,6 +994,17 @@ class LabelingWidget(LabelDialog):
                 select_theme_dark,
             ),
         )
+
+        if self._config.get("label_sets"):
+            actions = []
+            for name in self._config["label_sets"]:
+                act = create_action(
+                    name,
+                    functools.partial(self.switch_label_set, name),
+                    enabled=True,
+                )
+                actions.append(act)
+            utils.add_actions(self.menus.label_sets, actions)
 
         utils.add_actions(
             self.menus.view,
@@ -1029,6 +1070,8 @@ class LabelingWidget(LabelDialog):
             undo,
             None,
             zoom,
+            line_width_act,
+            fill_opacity_act,
             fit_width,
             toggle_auto_labeling_widget,
         )
@@ -1544,29 +1587,31 @@ class LabelingWidget(LabelDialog):
         )
         if text is None:
             return
-        if not self.validate_label(text):
-            self.error_message(
-                self.tr("Invalid label"),
-                self.tr("Invalid label '{}' with validation type '{}'").format(
-                    text, self._config["validate_label"]
-                ),
-            )
-            return
+        labels = [t.strip() for t in text.split(",") if t.strip()]
+        for lb in labels:
+            if not self.validate_label(lb):
+                self.error_message(
+                    self.tr("Invalid label"),
+                    self.tr("Invalid label '{}' with validation type '{}'").format(
+                        lb, self._config["validate_label"]
+                    ),
+                )
+                return
         shape.label = text
         shape.flags = flags
         shape.group_id = group_id
 
         # Add to label history
-        self.label_dialog.add_label_history(shape.label)
+        for lb in shape.labels:
+            self.label_dialog.add_label_history(lb)
 
         # Update unique label list
-        if not self.unique_label_list.find_items_by_label(shape.label):
-            unique_label_item = self.unique_label_list.create_item_from_label(
-                shape.label
-            )
-            self.unique_label_list.addItem(unique_label_item)
-            rgb = self._get_rgb_by_label(shape.label)
-            self.unique_label_list.set_item_label(unique_label_item, shape.label, rgb)
+        for lb in shape.labels:
+            if not self.unique_label_list.find_items_by_label(lb):
+                unique_label_item = self.unique_label_list.create_item_from_label(lb)
+                self.unique_label_list.addItem(unique_label_item)
+                rgb = self._get_rgb_by_label(lb)
+                self.unique_label_list.set_item_label(unique_label_item, lb, rgb)
 
         self._update_shape_color(shape)
         if shape.group_id is None:
@@ -1578,6 +1623,34 @@ class LabelingWidget(LabelDialog):
             )
         else:
             item.setText(f"{shape.label} ({shape.group_id})")
+        self.set_dirty()
+
+    def edit_image_label(self):
+        text, flags, _ = self.label_dialog.pop_up(
+            text=", ".join(
+                self.label_file.image_labels if self.label_file else self.other_data.get("image_labels", [])),
+            flags={},
+            group_id=None,
+        )
+        if text is None:
+            return
+        labels = [t.strip() for t in text.split(",") if t.strip()]
+        for lb in labels:
+            if not self.validate_label(lb):
+                self.error_message(
+                    self.tr("Invalid label"),
+                    self.tr("Invalid label '{}' with validation type '{}'").format(lb, self._config["validate_label"]),
+                )
+                return
+        self.other_data["image_labels"] = labels
+        if self.label_file:
+            self.label_file.image_labels = labels
+        for lb in labels:
+            if not self.unique_label_list.find_items_by_label(lb):
+                item = self.unique_label_list.create_item_from_label(lb)
+                self.unique_label_list.addItem(item)
+                rgb = self._get_rgb_by_label(lb)
+                self.unique_label_list.set_item_label(item, lb, rgb)
         self.set_dirty()
 
     def file_search_changed(self):
@@ -1622,6 +1695,24 @@ class LabelingWidget(LabelDialog):
         self.actions.edit.setEnabled(n_selected == 1)
         self.set_text_editing(True)
 
+    def update_unique_label_list(self):
+        """Refresh unique label list from current config."""
+        self.unique_label_list.clear()
+        if self._config.get("labels"):
+            for label in self._config["labels"]:
+                item = self.unique_label_list.create_item_from_label(label)
+                self.unique_label_list.addItem(item)
+                rgb = self._get_rgb_by_label(label)
+                self.unique_label_list.set_item_label(item, label, rgb)
+
+    def update_label_dialog_labels(self):
+        """Refresh label dialog list from current config."""
+        self.label_dialog.label_list.clear()
+        if self._config.get("labels"):
+            self.label_dialog.label_list.addItems(self._config["labels"])
+        if self.label_dialog._sort_labels:
+            self.label_dialog.label_list.sortItems()
+
     def add_label(self, shape):
         if shape.group_id is None:
             text = shape.label
@@ -1630,23 +1721,25 @@ class LabelingWidget(LabelDialog):
         label_list_item = LabelListWidgetItem(text, shape)
         self.label_list.add_iem(label_list_item)
         # Don't add special autolabeling labels to the unique_label_list
-        if shape.label not in [
-            AutoLabelingMode.OBJECT,
-            AutoLabelingMode.ADD,
-            AutoLabelingMode.REMOVE,
-        ] and not self.unique_label_list.find_items_by_label(shape.label):
-            item = self.unique_label_list.create_item_from_label(shape.label)
-            self.unique_label_list.addItem(item)
-            rgb = self._get_rgb_by_label(shape.label)
-            self.unique_label_list.set_item_label(item, shape.label, rgb)
+        for lb in shape.labels:
+            if lb not in [
+                AutoLabelingMode.OBJECT,
+                AutoLabelingMode.ADD,
+                AutoLabelingMode.REMOVE,
+            ] and not self.unique_label_list.find_items_by_label(lb):
+                item = self.unique_label_list.create_item_from_label(lb)
+                self.unique_label_list.addItem(item)
+                rgb = self._get_rgb_by_label(lb)
+                self.unique_label_list.set_item_label(item, lb, rgb)
 
         # Add label to history if it is not a special label
-        if shape.label not in [
-            AutoLabelingMode.OBJECT,
-            AutoLabelingMode.ADD,
-            AutoLabelingMode.REMOVE,
-        ]:
-            self.label_dialog.add_label_history(shape.label)
+        for lb in shape.labels:
+            if lb not in [
+                AutoLabelingMode.OBJECT,
+                AutoLabelingMode.ADD,
+                AutoLabelingMode.REMOVE,
+            ]:
+                self.label_dialog.add_label_history(lb)
 
         for action in self.actions.on_shapes_present:
             action.setEnabled(True)
@@ -1669,13 +1762,13 @@ class LabelingWidget(LabelDialog):
         self.set_dirty()
 
     def _update_shape_color(self, shape):
-        r, g, b = self._get_rgb_by_label(shape.label)
+        r, g, b = self._get_rgb_by_label(shape.primary_label)
         shape.line_color = QtGui.QColor(r, g, b)
         shape.vertex_fill_color = QtGui.QColor(r, g, b)
         shape.hvertex_fill_color = QtGui.QColor(255, 255, 255)
-        shape.fill_color = QtGui.QColor(r, g, b, 128)
+        shape.fill_color = QtGui.QColor(r, g, b, Shape.fill_opacity)
         shape.select_line_color = QtGui.QColor(255, 255, 255)
-        shape.select_fill_color = QtGui.QColor(r, g, b, 155)
+        shape.select_fill_color = QtGui.QColor(r, g, b, Shape.fill_opacity)
 
     def _get_rgb_by_label(self, label):
         if self._config["shape_color"] == "auto":
@@ -1725,7 +1818,10 @@ class LabelingWidget(LabelDialog):
     def load_labels(self, shapes):
         s = []
         for shape in shapes:
-            label = shape["label"]
+            labels = shape.get("labels", [])
+            if not labels:
+                label = shape.get("label", "")
+                labels = [label] if label else []
             text = shape.get("text", "")
             points = shape["points"]
             shape_type = shape["shape_type"]
@@ -1738,7 +1834,7 @@ class LabelingWidget(LabelDialog):
                 continue
 
             shape = Shape(
-                label=label,
+                labels=labels,
                 text=text,
                 shape_type=shape_type,
                 group_id=group_id,
@@ -1750,9 +1846,10 @@ class LabelingWidget(LabelDialog):
             default_flags = {}
             if self._config["label_flags"]:
                 for pattern, keys in self._config["label_flags"].items():
-                    if re.match(pattern, label):
-                        for key in keys:
-                            default_flags[key] = False
+                    for lb in labels:
+                        if re.match(pattern, lb):
+                            for key in keys:
+                                default_flags[key] = False
             shape.flags = default_flags
             if flags:
                 shape.flags.update(flags)
@@ -1776,7 +1873,7 @@ class LabelingWidget(LabelDialog):
             data = s.other_data.copy()
             data.update(
                 {
-                    "label": s.label,
+                    "labels": s.labels,
                     "text": s.text,
                     "points": [(p.x(), p.y()) for p in s.points],
                     "group_id": s.group_id,
@@ -1791,7 +1888,7 @@ class LabelingWidget(LabelDialog):
         shapes = [
             format_shape(item.shape())
             for item in self.label_list
-            if item.shape().label
+            if item.shape().primary_label
             not in [
                 AutoLabelingMode.OBJECT,
                 AutoLabelingMode.ADD,
@@ -1809,6 +1906,7 @@ class LabelingWidget(LabelDialog):
             image_data = self.image_data if self._config["store_data"] else None
             if osp.dirname(filename) and not osp.exists(osp.dirname(filename)):
                 os.makedirs(osp.dirname(filename))
+            label_file.image_labels = self.other_data.get("image_labels", [])
             label_file.save(
                 filename=filename,
                 shapes=shapes,
@@ -1879,19 +1977,19 @@ class LabelingWidget(LabelDialog):
         items = self.unique_label_list.selectedItems()
         text = None
         if items:
-            text = items[0].data(Qt.UserRole)
+            text = ",".join(item.data(Qt.UserRole) for item in items)
         flags = {}
         group_id = None
 
-        if self.canvas.shapes[-1].label in [
+        if self.canvas.shapes[-1].primary_label in [
             AutoLabelingMode.ADD,
             AutoLabelingMode.REMOVE,
         ]:
-            text = self.canvas.shapes[-1].label
+            text = self.canvas.shapes[-1].primary_label
         elif (
             self._config["display_label_popup"]
             or not text
-            or self.canvas.shapes[-1].label == AutoLabelingMode.OBJECT
+            or self.canvas.shapes[-1].primary_label == AutoLabelingMode.OBJECT
         ):
             last_label = self.find_last_label()
             if self._config["auto_use_last_label"] and last_label:
@@ -1902,15 +2000,17 @@ class LabelingWidget(LabelDialog):
                 if not text:
                     self.label_dialog.edit.setText(previous_text)
 
-        if text and not self.validate_label(text):
-            self.error_message(
-                self.tr("Invalid label"),
-                self.tr("Invalid label '{}' with validation type '{}'").format(
-                    text, self._config["validate_label"]
-                ),
-            )
-            text = ""
-            return
+        if text:
+            for lb in [t.strip() for t in text.split(",") if t.strip()]:
+                if not self.validate_label(lb):
+                    self.error_message(
+                        self.tr("Invalid label"),
+                        self.tr("Invalid label '{}' with validation type '{}'").format(
+                            lb, self._config["validate_label"]
+                        ),
+                    )
+                    text = ""
+                    return
 
         if text:
             self.label_list.clearSelection()
@@ -2007,6 +2107,23 @@ class LabelingWidget(LabelDialog):
         self._config["show_texts"] = enabled
         self.actions.show_texts.setChecked(enabled)
         self.canvas.set_show_texts(enabled)
+        save_config(self._config)
+
+    def line_width_changed(self, value):
+        Shape.line_width = value
+        self._config["shape"]["line_width"] = value
+        save_config(self._config)
+        self.canvas.update()
+
+    def fill_opacity_changed(self, value):
+        Shape.fill_opacity = value
+        Shape.fill_color.setAlpha(value)
+        Shape.select_fill_color.setAlpha(value)
+        self._config["shape"]["fill_opacity"] = value
+        for shape in self.canvas.shapes:
+            shape.fill_color.setAlpha(value)
+            shape.select_fill_color.setAlpha(value)
+        self.canvas.update()
         save_config(self._config)
 
     def on_new_brightness_contrast(self, qimage):
@@ -2117,7 +2234,7 @@ class LabelingWidget(LabelDialog):
                 osp.dirname(label_file),
                 self.label_file.image_path,
             )
-            self.other_data = self.label_file.other_data
+            self.other_data["image_labels"] = self.label_file.image_labels
             self.shape_text_edit.textChanged.disconnect()
             self.shape_text_edit.setPlainText(self.other_data.get("image_text", ""))
             self.shape_text_edit.textChanged.connect(self.shape_text_changed)
@@ -2126,6 +2243,8 @@ class LabelingWidget(LabelDialog):
             if self.image_data:
                 self.image_path = filename
             self.label_file = None
+            self.other_data = {}
+            self.other_data["image_labels"] = []
         image = QtGui.QImage.fromData(self.image_data)
 
         if image.isNull():
@@ -2718,7 +2837,7 @@ class LabelingWidget(LabelDialog):
         else:  # Just update existing shapes
             # Remove shapes with label AutoLabelingMode.OBJECT
             for shape in self.canvas.shapes:
-                if shape.label == AutoLabelingMode.OBJECT:
+                if shape.primary_label == AutoLabelingMode.OBJECT:
                     item = self.label_list.find_item_by_shape(shape)
                     self.label_list.remove_item(item)
             self.load_shapes(auto_labeling_result.shapes, replace=False)
@@ -2729,7 +2848,7 @@ class LabelingWidget(LabelDialog):
         """Clear auto labeling marks from the current image."""
         # Clean up label list
         for shape in self.canvas.shapes:
-            if shape.label in [
+            if shape.primary_label in [
                 AutoLabelingMode.OBJECT,
                 AutoLabelingMode.ADD,
                 AutoLabelingMode.REMOVE,
@@ -2753,7 +2872,7 @@ class LabelingWidget(LabelDialog):
         self.canvas.shapes = [
             shape
             for shape in self.canvas.shapes
-            if shape.label
+            if shape.primary_label
             not in [
                 AutoLabelingMode.OBJECT,
                 AutoLabelingMode.ADD,
@@ -2777,17 +2896,17 @@ class LabelingWidget(LabelDialog):
         items = self.label_list.selected_items()
         if items:
             shape = items[0].data(Qt.UserRole)
-            return shape.label
+            return shape.primary_label
 
         # Get the last label from the label list
         for item in reversed(self.label_list):
             shape = item.data(Qt.UserRole)
-            if shape.label not in [
+            if shape.primary_label not in [
                 AutoLabelingMode.OBJECT,
                 AutoLabelingMode.ADD,
                 AutoLabelingMode.REMOVE,
             ]:
-                return shape.label
+                return shape.primary_label
 
         # No label is found
         return ""
@@ -2796,7 +2915,7 @@ class LabelingWidget(LabelDialog):
         """Finish auto labeling object."""
         has_object = False
         for shape in self.canvas.shapes:
-            if shape.label == AutoLabelingMode.OBJECT:
+            if shape.primary_label == AutoLabelingMode.OBJECT:
                 has_object = True
                 break
 
@@ -2820,36 +2939,37 @@ class LabelingWidget(LabelDialog):
                 self.label_dialog.edit.setText(previous_text)
                 return
 
-        if not self.validate_label(text):
-            self.error_message(
-                self.tr("Invalid label"),
-                self.tr("Invalid label '{}' with validation type '{}'").format(
-                    text, self._config["validate_label"]
-                ),
-            )
-            return
+        for lb in [t.strip() for t in text.split(",") if t.strip()]:
+            if not self.validate_label(lb):
+                self.error_message(
+                    self.tr("Invalid label"),
+                    self.tr("Invalid label '{}' with validation type '{}'").format(
+                        lb, self._config["validate_label"]
+                    ),
+                )
+                return
 
         # Add to label history
-        self.label_dialog.add_label_history(text)
+        for lb in [t.strip() for t in text.split(",") if t.strip()]:
+            self.label_dialog.add_label_history(lb)
 
         # Update label for the object
         updated_shapes = False
         for shape in self.canvas.shapes:
-            if shape.label == AutoLabelingMode.OBJECT:
+            if shape.primary_label == AutoLabelingMode.OBJECT:
                 updated_shapes = True
                 shape.label = text
                 shape.flags = flags
                 shape.group_id = group_id
                 # Update unique label list
-                if not self.unique_label_list.find_items_by_label(shape.label):
-                    unique_label_item = self.unique_label_list.create_item_from_label(
-                        shape.label
-                    )
-                    self.unique_label_list.addItem(unique_label_item)
-                    rgb = self._get_rgb_by_label(shape.label)
-                    self.unique_label_list.set_item_label(
-                        unique_label_item, shape.label, rgb
-                    )
+                for lb in shape.labels:
+                    if not self.unique_label_list.find_items_by_label(lb):
+                        unique_label_item = self.unique_label_list.create_item_from_label(lb)
+                        self.unique_label_list.addItem(unique_label_item)
+                        rgb = self._get_rgb_by_label(lb)
+                        self.unique_label_list.set_item_label(
+                            unique_label_item, lb, rgb
+                        )
 
                 # Update label list
                 self._update_shape_color(shape)
@@ -3017,6 +3137,16 @@ class LabelingWidget(LabelDialog):
         )
         msg_box.exec_()
 
+    def switch_label_set(self, name):
+        """Switch current label list to the specified set"""
+        if "label_sets" not in self._config:
+            return
+        if name not in self._config["label_sets"]:
+            return
+        self._config["labels"] = self._config["label_sets"][name]
+        save_config(self._config)
+        self.update_unique_label_list()
+        self.update_label_dialog_labels()
     def save_dock_state(self, force=False):
         """Save dock state to config with error handling.
 

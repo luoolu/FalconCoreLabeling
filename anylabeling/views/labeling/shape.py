@@ -39,20 +39,30 @@ class Shape:
     select_fill_color = DEFAULT_SELECT_FILL_COLOR
     vertex_fill_color = DEFAULT_VERTEX_FILL_COLOR
     hvertex_fill_color = DEFAULT_HVERTEX_FILL_COLOR
+    line_width = 2
+    fill_opacity = DEFAULT_FILL_COLOR.alpha()
     point_type = P_ROUND
     point_size = 4
     scale = 1.5
 
     def __init__(
         self,
-        label=None,
+        labels=None,
         text="",
         line_color=None,
         shape_type=None,
         flags=None,
         group_id=None,
     ):
-        self.label = label
+        if labels is not None:
+            self.labels = list(labels)
+        elif labels is not None:
+            if isinstance(labels, list):
+                self.labels = labels
+            else:
+                self.labels = [l.strip() for l in str(labels).split(",") if l.strip()]
+        else:
+            self.labels = []
         self.text = text
         self.group_id = group_id
         self.points = []
@@ -81,6 +91,22 @@ class Shape:
 
         self.shape_type = shape_type
 
+    @property
+    def label(self):
+        """Return labels as comma separated string"""
+        return ", ".join(self.labels)
+
+    @label.setter
+    def label(self, text):
+        if isinstance(text, list):
+            self.labels = [str(t).strip() for t in text if str(t).strip()]
+        else:
+            self.labels = [t.strip() for t in str(text).split(",") if t.strip()]
+
+    @property
+    def primary_label(self):
+        """Return first label if exists"""
+        return self.labels[0] if self.labels else ""
     @property
     def shape_type(self):
         """Get shape type (polygon, rectangle, point, line, ...)"""
@@ -151,7 +177,7 @@ class Shape:
             color = self.select_line_color if self.selected else self.line_color
             pen = QtGui.QPen(color)
             # Try using integer sizes for smoother drawing(?)
-            pen.setWidth(max(1, int(round(2.0 / self.scale))))
+            pen.setWidth(max(1, int(round(self.line_width / self.scale))))
             painter.setPen(pen)
 
             line_path = QtGui.QPainterPath()
@@ -210,6 +236,7 @@ class Shape:
                 painter.fillPath(vrtx_path, self._vertex_fill_color)
             if self.fill:
                 color = self.select_fill_color if self.selected else self.fill_color
+                color.setAlpha(self.fill_opacity)
                 painter.fillPath(line_path, color)
 
     def draw_vertex(self, path, i):
@@ -330,4 +357,6 @@ class Shape:
         return self.points[key]
 
     def __setitem__(self, key, value):
+        if isinstance(key, int) and key >= len(self.points):
+            self.points.extend([None] * (key + 1 - len(self.points)))
         self.points[key] = value

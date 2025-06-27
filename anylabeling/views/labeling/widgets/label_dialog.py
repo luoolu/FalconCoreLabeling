@@ -77,6 +77,7 @@ class LabelDialog(QtWidgets.QDialog):
         layout.addWidget(bb)
         # label_list
         self.label_list = QtWidgets.QListWidget()
+        self.label_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         if self._fit_to_content["row"]:
             self.label_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         if self._fit_to_content["column"]:
@@ -88,7 +89,7 @@ class LabelDialog(QtWidgets.QDialog):
             self.label_list.sortItems()
         else:
             self.label_list.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
-        self.label_list.currentItemChanged.connect(self.label_selected)
+        self.label_list.itemSelectionChanged.connect(self.labels_selection_changed)
         self.label_list.itemDoubleClicked.connect(self.label_double_clicked)
         self.edit.set_list_widget(self.label_list)
         layout.addWidget(self.label_list)
@@ -128,8 +129,9 @@ class LabelDialog(QtWidgets.QDialog):
         if self._sort_labels:
             self.label_list.sortItems()
 
-    def label_selected(self, item):
-        self.edit.setText(item.text())
+    def labels_selection_changed(self):
+        labels = [i.text() for i in self.label_list.selectedItems()]
+        self.edit.setText(",".join(labels))
 
     def validate(self):
         text = self.edit.text()
@@ -217,12 +219,20 @@ class LabelDialog(QtWidgets.QDialog):
             self.edit_group_id.clear()
         else:
             self.edit_group_id.setText(str(group_id))
-        items = self.label_list.findItems(text, QtCore.Qt.MatchFixedString)
-        if items:
-            if len(items) != 1:
-                logger.warning("Label list has duplicate '%s'", text)
-            self.label_list.setCurrentItem(items[0])
-            row = self.label_list.row(items[0])
+        self.label_list.clearSelection()
+        first_item = None
+        for label in [t.strip() for t in text.split(",") if t.strip()]:
+            items = self.label_list.findItems(label, QtCore.Qt.MatchFixedString)
+            if items:
+                if len(items) != 1:
+                    logger.warning("Label list has duplicate '%s'", label)
+                item = items[0]
+                item.setSelected(True)
+                if first_item is None:
+                    first_item = item
+        if first_item is not None:
+            self.label_list.setCurrentItem(first_item)
+            row = self.label_list.row(first_item)
             self.edit.completer().setCurrentRow(row)
         self.edit.setFocus(QtCore.Qt.PopupFocusReason)
         if move:

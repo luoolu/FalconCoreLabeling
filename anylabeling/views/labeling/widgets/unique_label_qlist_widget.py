@@ -9,6 +9,9 @@ from .escapable_qlist_widget import EscapableQListWidget
 
 
 class UniqueLabelQListWidget(EscapableQListWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
     # QT Overload
     def mousePressEvent(self, event):
         super().mousePressEvent(event)

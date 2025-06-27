@@ -102,6 +102,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         self.is_loading = False
         self.loading_text = self.tr("Loading...")
         self.loading_angle = 0
+        self.free_drawing_polygon = False
 
     def set_loading(self, is_loading: bool, loading_text: str = None):
         """Set loading state"""
@@ -302,6 +303,10 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
             if self.create_mode in ["polygon", "linestrip"]:
                 self.line[0] = self.current[-1]
                 self.line[1] = pos
+                if self.create_mode == "polygon" and self.free_drawing_polygon:
+                    if not self.close_enough(pos, self.current[-1]):
+                        self.current.add_point(pos)
+                        self.line[0] = self.current[-1]
             elif self.create_mode == "rectangle":
                 self.line.points = [self.current[0], pos]
                 self.line.close()
@@ -429,6 +434,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
             return
         pos = self.transform_pos(ev.localPos())
         if ev.button() == QtCore.Qt.LeftButton:
+            self.left_button_down = True
             if self.drawing():
                 if self.current:
                     # Add point to existing shape.
@@ -450,6 +456,8 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
                     # Create new shape.
                     self.current = Shape(shape_type=self.create_mode)
                     self.current.add_point(pos)
+                    if self.create_mode == "polygon":
+                        self.free_drawing_polygon = True
                     if self.create_mode == "point":
                         self.finalise()
                     else:
@@ -484,34 +492,66 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
 
     # QT Overload
     def mouseReleaseEvent(self, ev):
-        """Mouse release event"""
+        """
+        Mouse release event
+
+        自由手绘多边形改进：
+        - 在 polygon 创建模式下，松开左键后 **不再** 把 `self.free_drawing_polygon`
+          设为 False；这样首击后即可放手，自由移动鼠标持续绘制。
+        - 其他形状模式、编辑模式和右键逻辑保持不变。
+        """
         if self.is_loading:
             return
+
+        # ---------- 右键释放：菜单 / 复制移动 ----------
         if ev.button() == QtCore.Qt.RightButton:
             menu = self.menus[len(self.selected_shapes_copy) > 0]
             self.restore_cursor()
-            if not menu.exec_(self.mapToGlobal(ev.pos())) and self.selected_shapes_copy:
-                # Cancel the move by deleting the shadow copy.
+            if (
+                    not menu.exec_(self.mapToGlobal(ev.pos()))
+                    and self.selected_shapes_copy
+            ):
+                # 取消移动，删除影子拷贝
                 self.selected_shapes_copy = []
                 self.repaint()
-        elif ev.button() == QtCore.Qt.LeftButton:
-            if self.editing():
-                if (
-                    self.h_hape is not None
+            return  # 右键逻辑到此结束
+
+        # ---------- 左键释放 ----------
+        if ev.button() == QtCore.Qt.LeftButton:
+            self.left_button_down = False
+
+            # 关键改动：不再在此处关闭 freehand
+            # -------------------------------------------------
+            # 旧实现曾有：
+            # if self.drawing() and self.create_mode == "polygon" and self.free_drawing_polygon:
+            #     self.free_drawing_polygon = False
+            #     return
+            # 现已移除，让 freehand 状态持续，直到双击 finalize
+            # -------------------------------------------------
+
+            # ------- 编辑模式下的选区与移动收尾 -------
+            if (
+                    self.editing()
+                    and self.h_hape is not None
                     and self.h_shape_is_selected
                     and not self.moving_shape
+            ):
+                # 点击空白处：取消当前 hover shape 的选中
+                self.selection_changed.emit(
+                    [x for x in self.selected_shapes if x != self.h_hape]
+                )
+
+            # ------- 结束形状/顶点移动并记录 undo -------
+            if self.moving_shape and self.h_hape:
+                index = self.shapes.index(self.h_hape)
+                if (
+                        self.shapes_backups
+                        and self.shapes_backups[-1][index].points
+                        != self.shapes[index].points
                 ):
-                    self.selection_changed.emit(
-                        [x for x in self.selected_shapes if x != self.h_hape]
-                    )
-
-        if self.moving_shape and self.h_hape:
-            index = self.shapes.index(self.h_hape)
-            if self.shapes_backups[-1][index].points != self.shapes[index].points:
-                self.store_shapes()
-                self.shape_moved.emit()
-
-            self.moving_shape = False
+                    self.store_shapes()
+                    self.shape_moved.emit()
+                self.moving_shape = False
 
     def end_move(self, copy):
         """End of move"""
@@ -918,6 +958,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         self.shapes.append(self.current)
         self.store_shapes()
         self.current = None
+        self.free_drawing_polygon = False
         self.set_hiding(False)
         self.new_shape.emit()
         self.update()
@@ -1092,6 +1133,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         if self.drawing():
             if key == QtCore.Qt.Key_Escape and self.current:
                 self.current = None
+                self.free_drawing_polygon = False
                 self.drawing_polygon.emit(False)
                 self.update()
             elif key == QtCore.Qt.Key_Return and self.can_close_shape():
@@ -1158,6 +1200,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
             self.line[0] = self.current[-1]
         else:
             self.current = None
+            self.free_drawing_polygon = False
             self.drawing_polygon.emit(False)
         self.update()
 
@@ -1201,6 +1244,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         self.restore_cursor()
         self.pixmap = None
         self.shapes_backups = []
+        self.free_drawing_polygon = False
         self.update()
 
     def set_show_cross_line(self, enabled):
