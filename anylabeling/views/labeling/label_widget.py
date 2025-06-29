@@ -5,6 +5,7 @@ import os
 import os.path as osp
 import re
 import webbrowser
+import weakref
 
 import imgviz
 import natsort
@@ -55,6 +56,10 @@ class LabelingWidget(LabelDialog):
     FIT_WINDOW, FIT_WIDTH, MANUAL_ZOOM = 0, 1, 2
     next_files_changed = QtCore.pyqtSignal(list)
 
+    # Keep weak references to all active labeling widgets so that
+    # global settings such as mask opacity can be propagated.
+    _instances = weakref.WeakSet()
+
     def __init__(
         self,
         parent=None,
@@ -65,6 +70,8 @@ class LabelingWidget(LabelDialog):
         output_dir=None,
     ):
         self.parent = parent
+        # Register this widget so global settings can be synced
+        LabelingWidget._instances.add(self)
         if output is not None:
             logger.warning("argument output is deprecated, use output_file instead")
             if output_file is None:
@@ -2115,16 +2122,33 @@ class LabelingWidget(LabelDialog):
         save_config(self._config)
         self.canvas.update()
 
-    def fill_opacity_changed(self, value):
+    @classmethod
+    def _apply_fill_opacity_to_all(cls, value):
+        """Apply mask opacity to every open labeling widget (update all shapes)."""
+        # 更新全局 Shape 默认透明度和填充颜色的 alpha 值
         Shape.fill_opacity = value
         Shape.fill_color.setAlpha(value)
         Shape.select_fill_color.setAlpha(value)
-        self._config["shape"]["fill_opacity"] = value
-        for shape in self.canvas.shapes:
-            shape.fill_color.setAlpha(value)
-            shape.select_fill_color.setAlpha(value)
-        self.canvas.update()
-        save_config(self._config)
+        # 遍历所有活动的 LabelingWidget 实例，同步设置遮罩透明度
+        for widget in list(cls._instances):
+            # 更新配置中的透明度值
+            widget._config["shape"]["fill_opacity"] = value
+            # 同步更新各实例的滑块数值（避免递归信号触发）
+            if widget.fill_opacity_slider.value() != value:
+                widget.fill_opacity_slider.blockSignals(True)
+                widget.fill_opacity_slider.setValue(value)
+                widget.fill_opacity_slider.blockSignals(False)
+            # 更新该实例所有 Shape 对象的填充颜色透明度
+            for shape in widget.canvas.shapes:
+                shape.fill_color.setAlpha(value)
+                shape.select_fill_color.setAlpha(value)
+            # 重绘画布，立即应用透明度更改
+            widget.canvas.update()
+            save_config(widget._config)
+
+    def fill_opacity_changed(self, value):
+        """滑块值改变时的回调函数，应用新的遮罩透明度。"""
+        self._apply_fill_opacity_to_all(value)
 
     def on_new_brightness_contrast(self, qimage):
         self.canvas.load_pixmap(QtGui.QPixmap.fromImage(qimage), clear_shapes=False)

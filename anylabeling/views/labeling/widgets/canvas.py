@@ -836,7 +836,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
 
         for shape in self.shapes:
             if (shape.selected or not self._hide_backround) and self.is_visible(shape):
-                shape.fill = shape.selected or shape == self.h_hape
+                shape.fill = True  # 始终填充 Shape，不再依赖选中或悬停
                 shape.paint(p)
         if self.current:
             self.current.paint(p)
