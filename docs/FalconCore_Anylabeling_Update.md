@@ -79,7 +79,7 @@ mask_opacity: 0.5         # default alpha [0‑1]
 ```
 
 * **contour\_width** and **mask\_opacity** are also adjustable at runtime via the toolbar sliders.
-
+* Adjusting **mask\_opacity** now updates all open labeling windows simultaneously.
 ---
 
 ## Advanced: SAM‑based Auto‑Segmentation *(experimental)*
