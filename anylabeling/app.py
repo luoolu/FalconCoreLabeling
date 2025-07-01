@@ -207,6 +207,7 @@ def main():
             "Failed to load translation for %s. Using default language.",
             language,
         )
+
     win = MainWindow(
         app,
         config=config,
@@ -214,6 +215,10 @@ def main():
         output_file=output_file,
         output_dir=output_dir,
     )
+
+    # 🔽 添加自动分割按钮初始化（你需要在 MainWindow 中实现此方法）
+    if hasattr(win, "add_segment_all_button"):
+        win.add_segment_all_button()
 
     if reset_config:
         logger.info("Resetting Qt config: %s", win.settings.fileName())

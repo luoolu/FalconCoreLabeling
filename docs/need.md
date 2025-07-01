@@ -137,6 +137,7 @@ mask_generator = SamAutomaticMaskGenerator(
     crop_n_points_downscale_factor=1,
     min_mask_region_area=500,
 )
+通过anylabeling/views/mainwindow.py独立与框架解决  
 需求6:增加Drawing Polygon时，可以跟踪鼠标移动的轨迹的功能，而不需要点击鼠标左键一个一个的打点；
 - [x] Freehand polygon drawing by holding the left mouse button.
 - Freehand polygons begin immediately after the first click
@@ -145,6 +146,9 @@ mask_generator = SamAutomaticMaskGenerator(
 选择create Polygon后，选中第一个点后，还是需要点击鼠标左键一个一个的打点，没有实现跟踪鼠标移动的轨迹的功能;
 目前还是需要点击鼠标左键一个一个的打点;应该是选择多边形，点击鼠标左键选择开始点后，就可以跟踪鼠标移动的轨迹，
 双击鼠标左键结束多边形的绘制;
+需求7:多个轮廓多选删除，已有；
+需求8:单个实例或目标的文字描述标注，已有；
+
 ## 更新的功能点
 1,增加了轮廓线粗细、填充mask透明度可在界面调节的功能;
 2,增加了给每个实例打多个标签的功能（Ctrl键）;
