@@ -1,8 +1,3 @@
-[Desktop Entry]
-Name=AnyLabeling
-Comment=Effortless data labeling with AI support
-Exec=AnyLabeling
-Icon=anylabeling/resources/images/logo.png
-Terminal=false
-Type=Application
-Categories=Graphics;RasterGraphics;MachineLearning
+version https://git-lfs.github.com/spec/v1
+oid sha256:d9b9022cd0ebd41e0398fb0b76afc2dfd68211a7894e6a5bee7ec909d33f7eae
+size 225

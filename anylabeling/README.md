@@ -1,8 +1,3 @@
-# Coding structure
-
-- **models:** Data model classes for PyQt
-- **views:** View classes for PyQt
-- **services:** Independent services for system interaction
-- **common:** Common utilities
-- **configs:** Configuration files
-- **resources:** Resources for PyQt
+version https://git-lfs.github.com/spec/v1
+oid sha256:827bdb61f722dd864c0f386c056ed8afbaee386645a4d20772c2212f1062f684
+size 259

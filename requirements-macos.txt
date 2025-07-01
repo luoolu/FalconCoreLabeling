@@ -1,10 +1,3 @@
-opencv-contrib-python-headless==4.7.0.72
-# PyQt5==5.15.6 # Use Miniconda/Anaconda: conda install -c conda-forge pyqt
-imgviz==1.5.0
-natsort==8.1.0
-termcolor==1.1.0
-PyYAML==6.0.1
-onnx==1.16.1
-onnxruntime==1.18.1
-qimage2ndarray==1.10.0
-darkdetect==0.8.0
+version https://git-lfs.github.com/spec/v1
+oid sha256:32509a2b5ea1d5d90b85018e72b3797bdc748f76ec3ad347069db398eb35d703
+size 251

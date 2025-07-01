@@ -1,3 +1,3 @@
-recursive-include anylabeling/configs *
-recursive-include anylabeling/views/labeling/icons *
-global-include *.ui
+version https://git-lfs.github.com/spec/v1
+oid sha256:3089a4dbd67665b91413f02a149043b3dcc01b8c2d3aee25c5e3995a6999abb1
+size 113

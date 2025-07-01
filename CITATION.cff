@@ -1,9 +1,3 @@
-cff-version: 1.2.0
-message: "If you use this software, please cite it as below."
-authors:
-- family-names: "Nguyen"
-  given-names: "Viet Anh"
-  orcid: https://orcid.org/0009-0002-0457-7811
-title: "AnyLabeling - Effortless data labeling with AI support"
-url: "https://github.com/vietanhdev/anylabeling"
-license: GPL-3
+version https://git-lfs.github.com/spec/v1
+oid sha256:e6c6ac03c308fad15fbaf78c2cce4b35525105ed30d249530b9d80d201eb44ca
+size 316
