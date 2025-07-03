@@ -21,6 +21,10 @@ checkpoints/
 2,改为从anylabeling_data/models路径下获取，跟自动标注一样，没有就自动下载；
 改为从"https://github.com/facebookresearch/sam2"下载yaml,
 "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt"下载模型文件
+https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt
+https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt
+https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt
+https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
 ## modify anylabeling/views/mainwindow.py
 '''
 def segment_all_instances(self):

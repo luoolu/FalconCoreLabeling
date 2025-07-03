@@ -157,32 +157,90 @@ class MainWindow(QMainWindow):
                 self.removeToolBar(tb)
 
     # ------------------------------------------------------------------
-    # Segment-All 主逻辑（配置目录指向 sam2/configs）
+    # Segment-All 主逻辑（四尺寸 + 下载即分割，已修正 Path 顺序）
     # ------------------------------------------------------------------
     def segment_all_instances(self):
-        """Segment current image with SAM-2 and draw masks."""
-        # ---------- ① 当前图像 ----------
+        """Segment current image with SAM-2 并立即显示结果。"""
+        # ---------- 必要 import ----------
+        from pathlib import Path
+        from PyQt5.QtWidgets import QProgressDialog, QInputDialog
+        from PyQt5.QtCore import Qt
+
+        # ---------- 工具：同步下载 ----------
+        def blocking_download(url: str, dst: Path, title: str) -> bool:
+            """返回 True=成功，False=取消/失败。"""
+            import urllib.request
+            try:
+                with urllib.request.urlopen(url) as resp:
+                    total = int(resp.getheader("Content-Length", "0"))
+                    dlg = QProgressDialog(title, "取消", 0, total, self)
+                    dlg.setWindowModality(Qt.WindowModal)
+                    dlg.setWindowTitle("模型下载")
+                    dlg.show()
+                    chunk = 1 << 20  # 1 MiB
+                    done = 0
+                    with open(dst, "wb") as f:
+                        while True:
+                            buf = resp.read(chunk)
+                            if not buf:
+                                break
+                            f.write(buf)
+                            done += len(buf)
+                            dlg.setValue(done)
+                            QApplication.processEvents()
+                            if dlg.wasCanceled():
+                                f.close()
+                                dst.unlink(missing_ok=True)
+                                return False
+                    dlg.close()
+                return True
+            except Exception as e:
+                QMessageBox.critical(self, "下载失败", str(e))
+                return False
+
+        # ---------- 0. 当前图像 ----------
         image_path = self.labeling_widget.current_image_path()
         if not image_path:
             QMessageBox.warning(self, "未找到图像", "请先在界面打开一张图像。")
             return
 
-        # ---------- ② checkpoint ----------
-        from pathlib import Path
-        ckpt_url = ("https://dl.fbaipublicfiles.com/segment_anything_2/092824/"
-                    "sam2.1_hiera_large.pt")
+        # ---------- 1. 选择模型尺寸 ----------
+        sizes = ["tiny", "small", "base_plus", "large"]
+        size2cfg = {
+            "tiny": ("sam2.1/sam2.1_hiera_t", "sam2.1_hiera_tiny.pt"),
+            "small": ("sam2.1/sam2.1_hiera_s", "sam2.1_hiera_small.pt"),
+            "base_plus": ("sam2.1/sam2.1_hiera_bp", "sam2.1_hiera_base_plus.pt"),
+            "large": ("sam2.1/sam2.1_hiera_l", "sam2.1_hiera_large.pt"),
+        }
+        size2url = {
+            "tiny": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
+            "small": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
+            "base_plus": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
+            "large": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
+        }
+        default_idx = sizes.index(getattr(self, "_sam2_variant", "large"))
+        size, ok = QInputDialog.getItem(self, "选择 SAM-2 模型尺寸",
+                                        "Model size:", sizes,
+                                        default_idx, False)
+        if not ok:
+            return
+
+        cfg_name, ckpt_file = size2cfg[size]
+        ckpt_url = size2url[size]
         model_dir = Path.home() / "anylabeling_data" / "models"
-        ckpt_path = model_dir / "sam2.1_hiera_large.pt"
+        ckpt_path = model_dir / ckpt_file
         model_dir.mkdir(parents=True, exist_ok=True)
 
+        # ---------- 2. checkpoint 若缺失则下载 ----------
         if not ckpt_path.exists():
-            if not download_with_progress(self, ckpt_url, ckpt_path, "SAM-2 权重"):
-                return  # 用户取消
+            if not blocking_download(ckpt_url, ckpt_path,
+                                     f"正在下载 {ckpt_file}"):
+                return  # 取消 / 失败
 
-        # ---------- ③ UI 忙碌 ----------
+        # ---------- 3. UI 忙碌 ----------
         self.segment_action.setEnabled(False)
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        self.statusBar().showMessage("正在分割，请稍候…")
+        self.statusBar().showMessage(f"使用 {size} 模型分割中，请稍候…")
 
         try:
             # -------- 依赖 --------
@@ -198,23 +256,30 @@ class MainWindow(QMainWindow):
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
-            # -------- Hydra 初始化（指向 sam2/configs） --------
+            # -------- 4. Hydra 初始化 --------
             if GlobalHydra.instance().is_initialized():
                 GlobalHydra.instance().clear()
             cfg_root = resources.files("sam2") / "configs"
             initialize_config_dir(config_dir=str(cfg_root), version_base="1.2")
 
-            # -------- 构建模型 --------
-            if self._sam2_predictor is None:
+            # -------- 5. 加载 / 切换模型 --------
+            need_reload = (
+                    not hasattr(self, "_sam2_variant") or
+                    self._sam2_variant != size or
+                    self._sam2_predictor is None
+            )
+            if need_reload:
                 model = build_sam2(
-                    config_file="sam2.1/sam2.1_hiera_l",  # 相对 configs 根目录
+                    config_file=cfg_name,
                     ckpt_path=str(ckpt_path),
                     device=device,
                 )
                 model.eval()
                 self._sam2_predictor = SAM2ImagePredictor(model)
+                self._sam2_mask_gen = None
+                self._sam2_variant = size
 
-            # -------- Mask 生成器 --------
+            # -------- 6. Mask 生成器 --------
             if self._sam2_mask_gen is None:
                 self._sam2_mask_gen = SAM2AutomaticMaskGenerator(
                     self._sam2_predictor.model,
@@ -224,20 +289,20 @@ class MainWindow(QMainWindow):
                     min_mask_region_area=256,
                 )
 
-            # -------- 读取图像 --------
+            # -------- 7. 读取图像 --------
             img_bgr = cv2.imread(str(image_path))
             if img_bgr is None:
                 raise IOError(f"无法读取图像：{image_path}")
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
             h, w = img_rgb.shape[:2]
 
-            # -------- 生成 masks --------
+            # -------- 8. 生成 masks --------
             masks = self._sam2_mask_gen.generate(img_rgb)
             if not masks:
                 QMessageBox.information(self, "无结果", "未检测到任何实例掩码。")
                 return
 
-            # -------- 转 Shape & 保存 JSON --------
+            # -------- 9. 转 Shape & 保存 JSON --------
             shapes, js = [], {
                 "version": "1.0",
                 "shapes": [],
@@ -248,10 +313,10 @@ class MainWindow(QMainWindow):
                 "imageLabels": [],
                 "image_labels": [],
             }
-
             for m in masks:
                 seg = (m["segmentation"] * 255).astype(np.uint8)
-                cnts, _ = cv2.findContours(seg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                cnts, _ = cv2.findContours(seg, cv2.RETR_EXTERNAL,
+                                           cv2.CHAIN_APPROX_SIMPLE)
                 for cnt in cnts:
                     pts = cnt.squeeze(1).tolist()
                     if len(pts) < 3:
@@ -270,13 +335,13 @@ class MainWindow(QMainWindow):
                             "fill_color": None,
                         }
                     )
-
             json_path = Path(image_path).with_suffix(".json")
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(js, f, ensure_ascii=False, indent=2)
 
             self.labeling_widget.viewer.load_shapes(shapes, replace=False)
-            QMessageBox.information(self, "完成", f"分割完成，已保存：\n{json_path}")
+            QMessageBox.information(self, "完成",
+                                    f"分割完成（{size}），已保存：\n{json_path}")
 
         except Exception as e:
             traceback.print_exc()
@@ -286,6 +351,9 @@ class MainWindow(QMainWindow):
             QApplication.restoreOverrideCursor()
             self.statusBar().clearMessage()
             self.segment_action.setEnabled(True)
+
+
+
 
 
 
