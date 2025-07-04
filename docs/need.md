@@ -115,8 +115,30 @@ for shape in self.shapes:
         shape.paint(p)
 ```
 
-通过上述改动，所有Shape将始终以填充颜色绘制（透明度由滑块值控制），不再需要鼠标悬停或选中才能显示遮罩效果。这样，拖动遮罩透明度滑块时，所有实例的遮罩透明度都会即时同步变化并在界面上实时体现。
+通过上述改动，所有Shape将始终以填充颜色绘制（透明度由滑块值控制），不再需要鼠标悬停或选中才能显示遮罩效果。
+这样，拖动遮罩透明度滑块时，所有实例的遮罩透明度都会即时同步变化并在界面上实时体现。
+现在所有的Shape，拖动遮罩透明度滑块时，所有实例的遮罩透明度都会即时同步变化并在界面上实时体现。
+需求是把轮廓线的粗细调节也做到可全局调节，所有实例的轮廓线粗细都会即时同步变化并在界面上实时体现。
+'''
+def line_width_changed(self, value):
+    self._apply_line_width_to_all(value)
 
+@classmethod
+def _apply_line_width_to_all(cls, value):
+    """Apply line width to every open labeling widget (update all shapes)."""
+    Shape.line_width = value
+    for widget in list(cls._instances):
+        widget._config["shape"]["line_width"] = value
+        if widget.line_width_spinbox.value() != value:
+            widget.line_width_spinbox.blockSignals(True)
+            widget.line_width_spinbox.setValue(value)
+            widget.line_width_spinbox.blockSignals(False)
+        for shape in widget.canvas.shapes:
+            shape.line_width = value
+        widget.canvas.update()
+        save_config(widget._config)
+
+'''
 '''
 
 需求5:增加可以使用SAM+SAM2模型对整张图像一键分割所有实例的功能--框架不合适；

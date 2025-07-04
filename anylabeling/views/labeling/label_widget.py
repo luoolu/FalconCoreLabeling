@@ -2117,10 +2117,22 @@ class LabelingWidget(LabelDialog):
         save_config(self._config)
 
     def line_width_changed(self, value):
+        self._apply_line_width_to_all(value)
+
+    @classmethod
+    def _apply_line_width_to_all(cls, value):
+        """Apply line width to every open labeling widget (update all shapes)."""
         Shape.line_width = value
-        self._config["shape"]["line_width"] = value
-        save_config(self._config)
-        self.canvas.update()
+        for widget in list(cls._instances):
+            widget._config["shape"]["line_width"] = value
+            if widget.line_width_spinbox.value() != value:
+                widget.line_width_spinbox.blockSignals(True)
+                widget.line_width_spinbox.setValue(value)
+                widget.line_width_spinbox.blockSignals(False)
+            for shape in widget.canvas.shapes:
+                shape.line_width = value
+            widget.canvas.update()
+            save_config(widget._config)
 
     @classmethod
     def _apply_fill_opacity_to_all(cls, value):
