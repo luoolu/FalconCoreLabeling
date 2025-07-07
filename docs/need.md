@@ -119,8 +119,8 @@ for shape in self.shapes:
 这样，拖动遮罩透明度滑块时，所有实例的遮罩透明度都会即时同步变化并在界面上实时体现。
 现在所有的Shape，拖动遮罩透明度滑块时，所有实例的遮罩透明度都会即时同步变化并在界面上实时体现。
 需求是把轮廓线的粗细调节也做到可全局调节，所有实例的轮廓线粗细都会即时同步变化并在界面上实时体现。
-'''
-anylabeling/views/labeling/label_widget.py line 2120~2135
+
+## anylabeling/views/labeling/label_widget.py line 2120~2135
 
 def line_width_changed(self, value):
     self._apply_line_width_to_all(value)
@@ -140,7 +140,7 @@ def _apply_line_width_to_all(cls, value):
         widget.canvas.update()
         save_config(widget._config)
 
-'''
+
 '''
 
 需求5:增加可以使用SAM+SAM2模型对整张图像一键分割所有实例的功能--框架不合适；
