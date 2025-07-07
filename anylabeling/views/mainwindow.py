@@ -124,16 +124,20 @@ class MainWindow(QMainWindow):
     def _insert_segment_menu(self):
         menubar = self.menuBar()
         actions = menubar.actions()
-        help_idx = None
-        for i, act in enumerate(actions):
-            if act.text().replace("&", "").lower() in ("help", "帮助"):
-                help_idx = i
+        help_action = None
+        for act in actions:
+            text = act.text().replace("&", "").strip().lower()
+            if text in ("help", "帮助"):
+                help_action = act
                 break
 
-        if help_idx is not None and help_idx + 1 < len(actions):
-            menubar.insertAction(actions[help_idx + 1], self.segment_action)
-        else:
+        # 若找不到 "Help"，则直接追加
+        if help_action is None:
             menubar.addAction(self.segment_action)
+        else:
+            # 始终用 "Segment All" 占据 Help 的位置
+            menubar.insertAction(help_action, self.segment_action)
+            menubar.removeAction(help_action)
 
     # ------------------------------------------------------------------
     # 删除旧的工具栏

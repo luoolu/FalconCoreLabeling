@@ -120,6 +120,8 @@ for shape in self.shapes:
 现在所有的Shape，拖动遮罩透明度滑块时，所有实例的遮罩透明度都会即时同步变化并在界面上实时体现。
 需求是把轮廓线的粗细调节也做到可全局调节，所有实例的轮廓线粗细都会即时同步变化并在界面上实时体现。
 '''
+anylabeling/views/labeling/label_widget.py line 2120~2135
+
 def line_width_changed(self, value):
     self._apply_line_width_to_all(value)
 
@@ -160,6 +162,10 @@ mask_generator = SamAutomaticMaskGenerator(
     min_mask_region_area=500,
 )
 通过anylabeling/views/mainwindow.py独立与框架解决  
+需求：把“Segment All”按钮放到Help右边与其并排，如下：
+File  Edit  View  Language  Theme  Label Sets  Tools  Help  Segment All
+
+
 需求6:增加Drawing Polygon时，可以跟踪鼠标移动的轨迹的功能，而不需要点击鼠标左键一个一个的打点；
 - [x] Freehand polygon drawing by holding the left mouse button.
 - Freehand polygons begin immediately after the first click
