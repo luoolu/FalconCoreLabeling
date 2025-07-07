@@ -141,7 +141,7 @@ def _apply_line_width_to_all(cls, value):
         save_config(widget._config)
 
 
-'''
+
 
 需求5:增加可以使用SAM+SAM2模型对整张图像一键分割所有实例的功能--框架不合适；
 segment all能得到结果，但是特别差，需要优化;已经分割出来的，锯齿状、实例连片明显；
