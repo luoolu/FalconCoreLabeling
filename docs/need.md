@@ -1,7 +1,9 @@
 ## 基于版本
+
 anylabeling v0.4.29
 
 ## 需求
+
 需求1:目前是一个标注目标只能有一个标签，现在的需求1是使得单个标注目标可以打多个标签；
 需求2:是增加可以给整张图打一个标签；
 需求3:是增加在用户标注界面可以配置标签列表和切换已经内置的多个标签列表的功能；
@@ -17,26 +19,25 @@ anylabeling v0.4.29
 anylabeling/views/labeling/label_widget.py
 1711 line
 
-    def update_label_dialog_labels(self):
-        """Refresh label dialog list from current config."""
-        self.label_dialog.label_list.clear()
-        if self._config.get("labels"):
-            self.label_dialog.label_list.addItems(self._config["labels"])
-        if self.label_dialog._sort_labels:
-            self.label_dialog.label_list.sortItems()
-
+def update_label_dialog_labels(self):
+    """Refresh label dialog list from current config."""
+    self.label_dialog.label_list.clear()
+    if self._config.get("labels"):
+        self.label_dialog.label_list.addItems(self._config["labels"])
+    if self.label_dialog._sort_labels:
+        self.label_dialog.label_list.sortItems()
 3144 line
 
-    def switch_label_set(self, name):
-        """Switch current label list to the specified set"""
-        if "label_sets" not in self._config:
-            return
-        if name not in self._config["label_sets"]:
-            return
-        self._config["labels"] = self._config["label_sets"][name]
-        save_config(self._config)
-        self.update_unique_label_list()
-        self.update_label_dialog_labels()
+def switch_label_set(self, name):
+    """Switch current label list to the specified set"""
+    if "label_sets" not in self._config:
+        return
+    if name not in self._config["label_sets"]:
+        return
+    self._config["labels"] = self._config["label_sets"][name]
+    save_config(self._config)
+    self.update_unique_label_list()
+    self.update_label_dialog_labels()
 '''
 需求4:增加轮廓线粗细、填充mask透明度可在界面调节的功能;
 在拖动滑块时立即实时更新所有实例的透明度；
@@ -44,7 +45,6 @@ anylabeling/views/labeling/label_widget.py
 替换anylabeling/views/labeling/label_widget.py
 现在是鼠标放到实例上时，可以调节mask透明度;但希望的是跟实例轮廓线一样所有实例同时调节mask透明度，
 而不是鼠标放到实例上时才能看到透明度调解后的mask;
-
 
 '''
 https://github.com/luoolu/FalconCoreLabeling;现在是鼠标放到实例上时，可以调节mask透明度;但希望的是跟实例轮廓线一样所有实例同时调节mask透明度，
@@ -58,7 +58,6 @@ https://github.com/luoolu/FalconCoreLabeling;现在是鼠标放到实例上时�
 '''
 '''
 我会立即为您修改 `fill_opacity_changed` 函数，以确保滑块拖动时立即将透明度应用到所有实例的遮罩，无需选中或悬浮。稍后将返回完整的函数代码供您直接替换使用。
-
 
 # FalconCoreLabeling 实时更新遮罩透明度解决方案
 
@@ -100,7 +99,6 @@ class LabelingWidget(LabelDialog):
         """滑块值改变时的回调函数，应用新的遮罩透明度。"""
         self._apply_fill_opacity_to_all(value)
 ```
-
 上述修改确保了当滑块 (`fill_opacity_slider`) 的值变化时，会实时将新的透明度应用到所有窗口的所有Shape遮罩上，并立即触发重绘生效。
 
 ## 修改 Canvas 绘制逻辑以始终填充遮罩
@@ -114,7 +112,6 @@ for shape in self.shapes:
         shape.fill = True  # 始终填充 Shape，不再依赖选中或悬停
         shape.paint(p)
 ```
-
 通过上述改动，所有Shape将始终以填充颜色绘制（透明度由滑块值控制），不再需要鼠标悬停或选中才能显示遮罩效果。
 这样，拖动遮罩透明度滑块时，所有实例的遮罩透明度都会即时同步变化并在界面上实时体现。
 现在所有的Shape，拖动遮罩透明度滑块时，所有实例的遮罩透明度都会即时同步变化并在界面上实时体现。
@@ -123,24 +120,22 @@ for shape in self.shapes:
 ## anylabeling/views/labeling/label_widget.py line 2120~2135
 
 def line_width_changed(self, value):
-    self._apply_line_width_to_all(value)
+self._apply_line_width_to_all(value)
 
 @classmethod
 def _apply_line_width_to_all(cls, value):
-    """Apply line width to every open labeling widget (update all shapes)."""
-    Shape.line_width = value
-    for widget in list(cls._instances):
-        widget._config["shape"]["line_width"] = value
-        if widget.line_width_spinbox.value() != value:
-            widget.line_width_spinbox.blockSignals(True)
-            widget.line_width_spinbox.setValue(value)
-            widget.line_width_spinbox.blockSignals(False)
-        for shape in widget.canvas.shapes:
-            shape.line_width = value
-        widget.canvas.update()
-        save_config(widget._config)
-
-
+"""Apply line width to every open labeling widget (update all shapes)."""
+Shape.line_width = value
+for widget in list(cls._instances):
+widget._config["shape"]["line_width"] = value
+if widget.line_width_spinbox.value() != value:
+widget.line_width_spinbox.blockSignals(True)
+widget.line_width_spinbox.setValue(value)
+widget.line_width_spinbox.blockSignals(False)
+for shape in widget.canvas.shapes:
+shape.line_width = value
+widget.canvas.update()
+save_config(widget._config)
 
 
 需求5:增加可以使用SAM+SAM2模型对整张图像一键分割所有实例的功能--框架不合适；
@@ -148,44 +143,49 @@ segment all能得到结果，但是特别差，需要优化;已经分割出来�
 需要的效果是逼近meta线上版本的效果;应该是需要参数调整和后处理；
 很多明显的实例连成一片为一个实例，轮廓锯齿状明显；
 mask_generator = SamAutomaticMaskGenerator(
-    model=sam,
-    points_per_side=64,
-    points_per_batch=64,
-    pred_iou_thresh=0.95,
-    stability_score_thresh=0.90,
-    stability_score_offset=1.0,
-    box_nms_thresh=0.7,
-    crop_n_layers=2,
-    crop_nms_thresh=0.7,
-    crop_overlap_ratio=512/1500,
-    crop_n_points_downscale_factor=1,
-    min_mask_region_area=500,
+model=sam,
+points_per_side=64,
+points_per_batch=64,
+pred_iou_thresh=0.95,
+stability_score_thresh=0.90,
+stability_score_offset=1.0,
+box_nms_thresh=0.7,
+crop_n_layers=2,
+crop_nms_thresh=0.7,
+crop_overlap_ratio=512/1500,
+crop_n_points_downscale_factor=1,
+min_mask_region_area=500,
 )
-通过anylabeling/views/mainwindow.py独立与框架解决  
+通过anylabeling/views/mainwindow.py独立与框架解决
 需求：把“Segment All”按钮放到Help右边与其并排，如下：
 File  Edit  View  Language  Theme  Label Sets  Tools  Help  Segment All
 
-
 需求6:增加Drawing Polygon时，可以跟踪鼠标移动的轨迹的功能，而不需要点击鼠标左键一个一个的打点；
-- [x] Freehand polygon drawing by holding the left mouse button.
+
+- [X]  Freehand polygon drawing by holding the left mouse button.
+
 - Freehand polygons begin immediately after the first click
 - no need to hold the button.
 - double-clicking to finish the shape.
-选择create Polygon后，选中第一个点后，还是需要点击鼠标左键一个一个的打点，没有实现跟踪鼠标移动的轨迹的功能;
-目前还是需要点击鼠标左键一个一个的打点;应该是选择多边形，点击鼠标左键选择开始点后，就可以跟踪鼠标移动的轨迹，
-双击鼠标左键结束多边形的绘制;
-需求7:多个轮廓多选删除，已有；
-需求8:单个实例或目标的文字描述标注，已有；
+  选择create Polygon后，选中第一个点后，还是需要点击鼠标左键一个一个的打点，没有实现跟踪鼠标移动的轨迹的功能;
+  目前还是需要点击鼠标左键一个一个的打点;应该是选择多边形，点击鼠标左键选择开始点后，就可以跟踪鼠标移动的轨迹，
+  双击鼠标左键结束多边形的绘制;
+  需求7:多个轮廓多选删除，已有；
+  需求8:单个实例或目标的文字描述标注，已有；
 
 ## 更新的功能点
+
 1,增加了轮廓线粗细、填充mask透明度可在界面调节的功能;
 2,增加了给每个实例打多个标签的功能（Ctrl键）和描述的文本;
 3,增加了给整张图打一个标签的功能;
 4,增加了在用户标注界面可以配置标签列表和切换已经内置的多个标签列表的功能;
 5,增加多边形标注时，可以跟踪鼠标移动的轨迹的功能;
 6,增加使用SAM2 SegmentALL获取所有实例的轮廓；
+
 ## usage
+
 ### 给整张图打标签
+
 在标注界面中给整张图打标签的步骤如下：
 
 在菜单栏选择 Edit → Set Image Label。
@@ -202,8 +202,11 @@ you must hold Ctrl (or Shift) when selecting the second item to keep the first o
 Otherwise the first selection is cleared, and the edit box is overwritten with only the new label, so the JSON ends up with just the latest label.
 
 ## dev launch
+
 python -m anylabeling.app
+
 ## update new sets
+
 Edit or remove ~/.anylabelingrc so it holds the updated label_sets.
 
 Or start the program with --config path/to/your_config.yaml.
@@ -213,6 +216,7 @@ Alternatively, run anylabeling --reset-config to regenerate the config file.
 After launching with the updated configuration, the “Label Sets” menu will reflect your new sets.
 
 ## push to github
+
 下面是一份完整的操作流程，假设你当前在 `anylabeling` 项目的根目录下、分支名为 `master`（如果是 `main`，把下面所有的 `master` 换成 `main` 即可）：
 
 ```bash
@@ -250,7 +254,6 @@ git push -u origin master
 git push origin --all
 git push origin --tags
 ```
-
 执行完成后，打开 [https://github.com/luoolu/FalconCoreLabeling](https://github.com/luoolu/FalconCoreLabeling) 查看，你的代码和提交就会同步到你自己的仓库里。以后如果想同步上游更新，只需：
 
 ```bash
@@ -258,13 +261,12 @@ git fetch upstream
 git merge upstream/master     # 或者 rebase upstream/master
 git push origin master
 ```
-
 就可以保持自己 fork 的仓库与官方仓库的更新一致。
 
 '''
 (.venv) (base) luolu@loobuntu:~/PycharmProjects/anylabeling$ git push -u origin master
 Username for 'https://github.com': luoolu
-Password for 'https://luoolu@github.com': 
+Password for 'https://luoolu@github.com':
 remote: Support for password authentication was removed on August 13, 2021.
 remote: Please see https://docs.github.com/get-started/getting-started-with-git/about-remote-repositories#cloning-with-https-urls for information on currently recommended modes of authentication.
 fatal: Authentication failed for 'https://github.com/luoolu/FalconCoreLabeling.git/'
@@ -281,7 +283,6 @@ fatal: Authentication failed for 'https://github.com/luoolu/FalconCoreLabeling.g
    * 登录到 GitHub 网站，点击右上角头像 → **Settings** → 左侧栏 **Developer settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token**。
    * 选择 **repo** 相关权限（至少要有 `repo` 全选），然后点击 **Generate token**。
    * 复制好生成的 token（注意：这个 token 只会显示一次，请妥善保存）。
-
 2. **在本地使用 PAT 进行推送**
    在终端执行推送命令时，输入用户名和 token 即可把 token 当成「密码」使用：
 
@@ -290,14 +291,12 @@ fatal: Authentication failed for 'https://github.com/luoolu/FalconCoreLabeling.g
    # Username: luoolu
    # Password: <粘贴你的 PAT>
    ```
-
    或者，你可以将 remote URL 临时改为在 URL 中直接包含 token（**不推荐写死在脚本里，仅作临时演示**）：
 
    ```bash
    git remote set-url origin https://luoolu:<YOUR_TOKEN>@github.com/luoolu/FalconCoreLabeling.git
    git push -u origin master
    ```
-
 3. **（可选）配置凭据管理器**
    安装并启用 Git 的 credential helper，之后第一次输入 token 后会被缓存，下次就不用再输：
 
@@ -317,16 +316,13 @@ fatal: Authentication failed for 'https://github.com/luoolu/FalconCoreLabeling.g
    ssh-keygen -t ed25519 -C "luoolu@your_email.com"
    # 一路回车（使用默认路径），可选设置 passphrase
    ```
-
 2. **把公钥复制到 GitHub**
 
    ```bash
    # 查看公钥内容
    cat ~/.ssh/id_ed25519.pub
    ```
-
    然后登录 GitHub → 头像 → **Settings** → 左侧 **SSH and GPG keys** → **New SSH key**，粘贴公钥内容并保存。
-
 3. **将远程地址改为 SSH 地址**
 
    ```bash
@@ -335,7 +331,6 @@ fatal: Authentication failed for 'https://github.com/luoolu/FalconCoreLabeling.g
    # 修改 origin 为 SSH 形式
    git remote set-url origin git@github.com:luoolu/FalconCoreLabeling.git
    ```
-
 4. **测试并推送**
 
    ```bash
@@ -352,7 +347,6 @@ fatal: Authentication failed for 'https://github.com/luoolu/FalconCoreLabeling.g
 ```bash
 git push -u origin master
 ```
-
 就可以成功将你本地的新功能推送到自己的 GitHub 仓库了。之后也可以照常：
 
 ```bash
@@ -361,5 +355,4 @@ git fetch upstream
 git merge upstream/master   # 或 git rebase upstream/master
 git push origin master
 ```
-
 祝你推送顺利！

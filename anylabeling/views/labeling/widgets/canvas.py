@@ -870,15 +870,15 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
                     fm = QtGui.QFontMetrics(p.font())
                     rect = fm.boundingRect(text)
                     p.fillRect(
-                        rect.x() + bbox.x() - 3,
-                        rect.y() + bbox.y() - 3,
-                        rect.width(),
-                        rect.height(),
+                        int(rect.x() + bbox.x() - 3),
+                        int(rect.y() + bbox.y() - 3),
+                        int(rect.width()),
+                        int(rect.height()),
                         QtGui.QColor("#00FF00"),
                     )
                     p.drawText(
-                        bbox.x(),
-                        bbox.y(),
+                        int(bbox.x()),
+                        int(bbox.y()),
                         text,
                     )
             pen = QtGui.QPen(QtGui.QColor("#000000"), 8, Qt.SolidLine)
@@ -888,8 +888,8 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
                 if text:
                     bbox = shape.bounding_rect()
                     p.drawText(
-                        bbox.x(),
-                        bbox.y(),
+                        int(bbox.x()),
+                        int(bbox.y()),
                         text,
                     )
 
