@@ -6,10 +6,6 @@ from PyQt5.QtCore import QCoreApplication
 from .. import utils
 from ..logger import logger
 
-# TODO(unknown):
-# - Calculate optimal position so as not to go out of screen area.
-
-
 class LabelQLineEdit(QtWidgets.QLineEdit):
     def __init__(self) -> None:
         super().__init__()
@@ -18,13 +14,11 @@ class LabelQLineEdit(QtWidgets.QLineEdit):
     def set_list_widget(self, list_widget):
         self.list_widget = list_widget
 
-    # QT Overload
     def keyPressEvent(self, e):
-        if e.key() in [QtCore.Qt.Key_Up, QtCore.Qt.Key_Down]:
+        if e.key() in [QtCore.Qt.Key_Up, QtCore.Qt.Key_Down] and self.list_widget:
             self.list_widget.keyPressEvent(e)
         else:
             super(LabelQLineEdit, self).keyPressEvent(e)
-
 
 class LabelDialog(QtWidgets.QDialog):
     def __init__(
@@ -37,13 +31,17 @@ class LabelDialog(QtWidgets.QDialog):
         completion="startswith",
         fit_to_content=None,
         flags=None,
+        max_list_width=360,
+        max_visible_rows=10,
     ):
         if text is None:
             text = QCoreApplication.translate("LabelDialog", "Enter object label")
 
         if fit_to_content is None:
-            fit_to_content = {"row": False, "column": True}
+            fit_to_content = {"row": True, "column": True}
         self._fit_to_content = fit_to_content
+        self._max_list_width = max_list_width
+        self.max_visible_rows = max_visible_rows
 
         super(LabelDialog, self).__init__(parent)
         self.edit = LabelQLineEdit()
@@ -65,7 +63,7 @@ class LabelDialog(QtWidgets.QDialog):
             layout_edit.addWidget(self.edit_group_id, 2)
             layout.addLayout(layout_edit)
         # buttons
-        self.button_box = bb = QtWidgets.QDialogButtonBox(
+        bb = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
             QtCore.Qt.Horizontal,
             self,
@@ -78,10 +76,10 @@ class LabelDialog(QtWidgets.QDialog):
         # label_list
         self.label_list = QtWidgets.QListWidget()
         self.label_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        if self._fit_to_content["row"]:
-            self.label_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        if self._fit_to_content["column"]:
-            self.label_list.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.label_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.label_list.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        # allow the list to expand with the dialog
+        self.label_list.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self._sort_labels = sort_labels
         if labels:
             self.label_list.addItems(labels)
@@ -102,12 +100,10 @@ class LabelDialog(QtWidgets.QDialog):
         layout.addItem(self.flags_layout)
         self.edit.textChanged.connect(self.update_flags)
         self.setLayout(layout)
-        # completion
+        # completer
         completer = QtWidgets.QCompleter()
         if completion == "startswith":
             completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
-            # Default settings.
-            # completer.setFilterMode(QtCore.Qt.MatchStartsWith)
         elif completion == "contains":
             completer.setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
             completer.setFilterMode(QtCore.Qt.MatchContains)
@@ -115,7 +111,6 @@ class LabelDialog(QtWidgets.QDialog):
             raise ValueError(f"Unsupported completion: {completion}")
         completer.setModel(self.label_list.model())
         self.edit.setCompleter(completer)
-        # Save last label
         self._last_label = ""
 
     def get_last_label(self):
@@ -134,11 +129,7 @@ class LabelDialog(QtWidgets.QDialog):
         self.edit.setText(",".join(labels))
 
     def validate(self):
-        text = self.edit.text()
-        if hasattr(text, "strip"):
-            text = text.strip()
-        else:
-            text = text.trimmed()
+        text = self.edit.text().strip()
         if text:
             self.accept()
 
@@ -146,17 +137,10 @@ class LabelDialog(QtWidgets.QDialog):
         self.validate()
 
     def postprocess(self):
-        text = self.edit.text()
-        if hasattr(text, "strip"):
-            text = text.strip()
-        else:
-            text = text.trimmed()
-        self.edit.setText(text)
+        self.edit.setText(self.edit.text().strip())
 
     def update_flags(self, label_new):
-        # keep state of shared flags
         flags_old = self.get_flags()
-
         flags_new = {}
         for pattern, keys in self._flags.items():
             if re.match(pattern, label_new):
@@ -166,9 +150,9 @@ class LabelDialog(QtWidgets.QDialog):
 
     def delete_flags(self):
         for i in reversed(range(self.flags_layout.count())):
-            item = self.flags_layout.itemAt(i).widget()
-            self.flags_layout.removeWidget(item)
-            item.setParent(None)
+            widget = self.flags_layout.itemAt(i).widget()
+            self.flags_layout.removeWidget(widget)
+            widget.setParent(None)
 
     def reset_flags(self, label=""):
         flags = {}
@@ -180,36 +164,37 @@ class LabelDialog(QtWidgets.QDialog):
 
     def set_flags(self, flags):
         self.delete_flags()
-        for key in flags:
-            item = QtWidgets.QCheckBox(key, self)
-            item.setChecked(bool(flags[key]))
-            self.flags_layout.addWidget(item)
-            item.show()
+        for key, value in flags.items():
+            chk = QtWidgets.QCheckBox(key, self)
+            chk.setChecked(bool(value))
+            self.flags_layout.addWidget(chk)
 
     def get_flags(self):
-        flags = {}
-        for i in range(self.flags_layout.count()):
-            item = self.flags_layout.itemAt(i).widget()
-            flags[item.text()] = item.isChecked()
-        return flags
+        return {self.flags_layout.itemAt(i).widget().text():
+                self.flags_layout.itemAt(i).widget().isChecked()
+                for i in range(self.flags_layout.count())}
 
     def get_group_id(self):
-        group_id = self.edit_group_id.text()
-        if group_id:
-            return int(group_id)
-        return None
+        gid = self.edit_group_id.text()
+        return int(gid) if gid else None
 
     def pop_up(self, text=None, move=True, flags=None, group_id=None):
+        # adjust vertical height
         if self._fit_to_content["row"]:
-            self.label_list.setMinimumHeight(
-                self.label_list.sizeHintForRow(0) * self.label_list.count() + 2
-            )
-        if self._fit_to_content["column"]:
-            self.label_list.setMinimumWidth(self.label_list.sizeHintForColumn(0) + 2)
-        # if text is None, the previous label in self.edit is kept
+            row_h = self.label_list.sizeHintForRow(0)
+            total = self.label_list.count()
+            if total > self.max_visible_rows:
+                self.label_list.setFixedHeight(row_h * self.max_visible_rows + 2)
+                self.label_list.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            else:
+                self.label_list.setFixedHeight(row_h * total + 2)
+                self.label_list.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        # horizontal policy only
+        self.label_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        # flags and text
         if text is None:
             text = self.edit.text()
-        if flags:
+        if flags is not None:
             self.set_flags(flags)
         else:
             self.reset_flags(text)
@@ -220,24 +205,19 @@ class LabelDialog(QtWidgets.QDialog):
         else:
             self.edit_group_id.setText(str(group_id))
         self.label_list.clearSelection()
-        first_item = None
-        for label in [t.strip() for t in text.split(",") if t.strip()]:
-            items = self.label_list.findItems(label, QtCore.Qt.MatchFixedString)
+        first = None
+        for lbl in [t.strip() for t in text.split(',') if t.strip()]:
+            items = self.label_list.findItems(lbl, QtCore.Qt.MatchFixedString)
             if items:
-                if len(items) != 1:
-                    logger.warning("Label list has duplicate '%s'", label)
                 item = items[0]
                 item.setSelected(True)
-                if first_item is None:
-                    first_item = item
-        if first_item is not None:
-            self.label_list.setCurrentItem(first_item)
-            row = self.label_list.row(first_item)
-            self.edit.completer().setCurrentRow(row)
+                first = first or item
+        if first:
+            self.label_list.setCurrentItem(first)
+            self.edit.completer().setCurrentRow(self.label_list.row(first))
         self.edit.setFocus(QtCore.Qt.PopupFocusReason)
         if move:
             self.move(QtGui.QCursor.pos())
         if self.exec_():
             return self.edit.text(), self.get_flags(), self.get_group_id()
-
         return None, None, None
