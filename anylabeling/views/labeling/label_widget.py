@@ -87,6 +87,7 @@ class LabelingWidget(LabelDialog):
         if config is None:
             config = get_config()
         self._config = config
+        self.sync_pplxpl = self._config.get("pplxpl_sync", False)
 
         # set default shape colors
         Shape.line_color = QtGui.QColor(*self._config["shape"]["line_color"])
@@ -405,6 +406,16 @@ class LabelingWidget(LabelDialog):
             checkable=True,
         )
         toggle_auto_use_last_label_mode.setChecked(self._config["auto_use_last_label"])
+
+        toggle_pplxpl_sync_mode = create_action(
+            self.tr("PPL-XPL Sync"),
+            self.toggle_pplxpl_sync,
+            None,
+            "group",
+            self.tr("Apply labels to all images in folder"),
+            checkable=True,
+        )
+        toggle_pplxpl_sync_mode.setChecked(self.sync_pplxpl)
 
         create_mode = create_action(
             self.tr("Create Polygons"),
@@ -828,6 +839,7 @@ class LabelingWidget(LabelDialog):
             delete_file=delete_file,
             toggle_keep_prev_mode=toggle_keep_prev_mode,
             toggle_auto_use_last_label_mode=toggle_auto_use_last_label_mode,
+            toggle_pplxpl_sync_mode=toggle_pplxpl_sync_mode,
             delete=delete,
             edit=edit,
             duplicate=duplicate,
@@ -875,6 +887,7 @@ class LabelingWidget(LabelDialog):
                 None,
                 toggle_keep_prev_mode,
                 toggle_auto_use_last_label_mode,
+                toggle_pplxpl_sync_mode,
                 None,
                 set_image_label,
             ),
@@ -1080,6 +1093,7 @@ class LabelingWidget(LabelDialog):
             line_width_act,
             fill_opacity_act,
             fit_width,
+            toggle_pplxpl_sync_mode,
             toggle_auto_labeling_widget,
         )
 
@@ -1382,6 +1396,8 @@ class LabelingWidget(LabelDialog):
         if self.filename is not None:
             title = f"{title} - {self.filename}*"
         self.setWindowTitle(title)
+        if self.sync_pplxpl:
+            self.sync_annotations_to_folder()
 
     def set_clean(self):
         self.dirty = False
@@ -1930,6 +1946,8 @@ class LabelingWidget(LabelDialog):
                 if len(items) != 1:
                     raise RuntimeError("There are duplicate files.")
                 items[0].setCheckState(Qt.Checked)
+            if self.sync_pplxpl:
+                self.sync_annotations_to_folder()
             # disable allows next and previous image to proceed
             # self.filename = filename
             return True
@@ -2717,6 +2735,86 @@ class LabelingWidget(LabelDialog):
     def toggle_auto_use_last_label(self):
         self._config["auto_use_last_label"] = not self._config["auto_use_last_label"]
         save_config(self._config)
+
+    def toggle_pplxpl_sync(self):
+        """Toggle PPL-XPL label synchronization."""
+        self.sync_pplxpl = not self.sync_pplxpl
+        self._config["pplxpl_sync"] = self.sync_pplxpl
+        save_config(self._config)
+
+    def _get_current_shapes_and_flags(self):
+        """Return current shapes and flags formatted for saving."""
+
+        def format_shape(s):
+            data = s.other_data.copy()
+            data.update(
+                {
+                    "labels": s.labels,
+                    "text": s.text,
+                    "points": [(p.x(), p.y()) for p in s.points],
+                    "group_id": s.group_id,
+                    "shape_type": s.shape_type,
+                    "flags": s.flags,
+                }
+            )
+            return data
+
+        shapes = [
+            format_shape(item.shape())
+            for item in self.label_list
+            if item.shape().primary_label
+               not in [
+                   AutoLabelingMode.OBJECT,
+                   AutoLabelingMode.ADD,
+                   AutoLabelingMode.REMOVE,
+               ]
+        ]
+        flags = {}
+        for i in range(self.flag_widget.count()):
+            item = self.flag_widget.item(i)
+            key = item.text()
+            flag = item.checkState() == Qt.Checked
+            flags[key] = flag
+        return shapes, flags
+
+    def sync_annotations_to_folder(self):
+        """Apply current annotations to all images in the opened folder."""
+        if not self.sync_pplxpl or not self.image_list:
+            return
+
+        shapes, flags = self._get_current_shapes_and_flags()
+
+        for img in self.image_list:
+            label_path = osp.splitext(img)[0] + ".json"
+            if self.output_dir:
+                label_file_without_path = osp.basename(label_path)
+                label_path = osp.join(self.output_dir, label_file_without_path)
+
+            if self._config["store_data"]:
+                img_data = LabelFile.load_image_file(img)
+                image = QtGui.QImage.fromData(img_data) if img_data else QtGui.QImage()
+            else:
+                img_data = None
+                reader = QtGui.QImageReader(img)
+                image = QtGui.QImage()
+                if reader.canRead():
+                    image = QtGui.QImage(img)
+
+            image_height = image.height() if not image.isNull() else None
+            image_width = image.width() if not image.isNull() else None
+
+            label_file = LabelFile()
+            label_file.image_labels = self.other_data.get("image_labels", [])
+            label_file.save(
+                filename=label_path,
+                shapes=shapes,
+                image_path=osp.relpath(img, osp.dirname(label_path)),
+                image_data=img_data,
+                image_height=image_height,
+                image_width=image_width,
+                other_data=self.other_data,
+                flags=flags,
+            )
 
     def remove_selected_point(self):
         self.canvas.remove_selected_point()

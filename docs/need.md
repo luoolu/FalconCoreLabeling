@@ -179,7 +179,571 @@ File  Edit  View  Language  Theme  Label Sets  Tools  Help  Segment All
 移除列表固定宽度设置，并将 QListWidget 的尺寸策略改为 Expanding，让其随对话框整体宽度一起伸缩。
 现在无论窗口怎么调整大小，标签列表都会自适应宽度，仅在必要时显示水平滚动条。
 需求10：
+- 示例文件夹和待标注PPL-XPL图像如下：
+/pplxpl_data$ tree
+.
+├── renxi1-2505.41_m139_0.jpg
+├── renxi1-2505.41_m139_15.jpg
+├── renxi1-2505.41_m139_30.jpg
+├── renxi1-2505.41_m139_45.jpg
+├── renxi1-2505.41_m139_60.jpg
+├── renxi1-2505.41_m139_75.jpg
+└── renxi1-2505.41_m139_s.jpg
 
+1 directory, 7 files
+-增加PPL-XPL标注同步按钮，启用和未启用，标志明显能看出来，默认不启用
+-标注和删除任何一个标注目标，都将该标注和删除应用到当前打开文件夹的所有图片
+- 示例文件夹和已标注PPL-XPL图像如下：
+/pplxpl_data$ tree
+.
+├── renxi1-2505.41_m139_0.jpg
+├── renxi1-2505.41_m139_0.json
+├── renxi1-2505.41_m139_15.jpg
+├── renxi1-2505.41_m139_15.json
+├── renxi1-2505.41_m139_30.jpg
+├── renxi1-2505.41_m139_30.json
+├── renxi1-2505.41_m139_45.jpg
+├── renxi1-2505.41_m139_45.json
+├── renxi1-2505.41_m139_60.jpg
+├── renxi1-2505.41_m139_60.json
+├── renxi1-2505.41_m139_75.jpg
+├── renxi1-2505.41_m139_75.json
+└── renxi1-2505.41_m139_s.jpg
+└── renxi1-2505.41_m139_s.json
+- anylabeling/views/labeling/label_widget.py
+- anylabeling/configs/anylabeling_config.yaml
+'''
+diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
+index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85f9df4c1f 100755
+--- a/anylabeling/views/labeling/label_widget.py
++++ b/anylabeling/views/labeling/label_widget.py
+@@ -65,50 +65,51 @@ class LabelingWidget(LabelDialog):
+         parent=None,
+         config=None,
+         filename=None,
+         output=None,
+         output_file=None,
+         output_dir=None,
+     ):
+         self.parent = parent
+         # Register this widget so global settings can be synced
+         LabelingWidget._instances.add(self)
+         if output is not None:
+             logger.warning("argument output is deprecated, use output_file instead")
+             if output_file is None:
+                 output_file = output
+ 
+         self.filename = None
+         self.image_path = None
+         self.image_data = None
+         self.label_file = None
+         self.other_data = {}
+ 
+         # see configs/anylabeling_config.yaml for valid configuration
+         if config is None:
+             config = get_config()
+         self._config = config
++        self.sync_pplxpl = self._config.get("pplxpl_sync", False)
+ 
+         # set default shape colors
+         Shape.line_color = QtGui.QColor(*self._config["shape"]["line_color"])
+         Shape.fill_color = QtGui.QColor(*self._config["shape"]["fill_color"])
+         Shape.select_line_color = QtGui.QColor(
+             *self._config["shape"]["select_line_color"]
+         )
+         Shape.select_fill_color = QtGui.QColor(
+             *self._config["shape"]["select_fill_color"]
+         )
+         Shape.vertex_fill_color = QtGui.QColor(
+             *self._config["shape"]["vertex_fill_color"]
+         )
+         Shape.hvertex_fill_color = QtGui.QColor(
+             *self._config["shape"]["hvertex_fill_color"]
+         )
+         Shape.line_width = self._config["shape"].get("line_width", 2)
+         Shape.fill_opacity = self._config["shape"].get("fill_opacity", Shape.fill_color.alpha())
+         Shape.fill_color.setAlpha(Shape.fill_opacity)
+         Shape.select_fill_color.setAlpha(Shape.fill_opacity)
+ 
+         # Set point size from config file
+         Shape.point_size = self._config["shape"]["point_size"]
+ 
+         super(LabelDialog, self).__init__()
+diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
+index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85f9df4c1f 100755
+--- a/anylabeling/views/labeling/label_widget.py
++++ b/anylabeling/views/labeling/label_widget.py
+@@ -384,50 +385,60 @@ class LabelingWidget(LabelDialog):
+             shortcuts["close"],
+             "cancel",
+             self.tr("Close current file"),
+         )
+ 
+         toggle_keep_prev_mode = create_action(
+             self.tr("Keep Previous Annotation"),
+             self.toggle_keep_prev_mode,
+             shortcuts["toggle_keep_prev_mode"],
+             None,
+             self.tr('Toggle "Keep Previous Annotation" mode'),
+             checkable=True,
+         )
+         toggle_keep_prev_mode.setChecked(self._config["keep_prev"])
+ 
+         toggle_auto_use_last_label_mode = create_action(
+             self.tr("Auto Use Last Label"),
+             self.toggle_auto_use_last_label,
+             shortcuts["toggle_auto_use_last_label"],
+             None,
+             self.tr('Toggle "Auto Use Last Label" mode'),
+             checkable=True,
+         )
+         toggle_auto_use_last_label_mode.setChecked(self._config["auto_use_last_label"])
+ 
++        toggle_pplxpl_sync_mode = create_action(
++            self.tr("PPL-XPL Sync"),
++            self.toggle_pplxpl_sync,
++            None,
++            "group",
++            self.tr("Apply labels to all images in folder"),
++            checkable=True,
++        )
++        toggle_pplxpl_sync_mode.setChecked(self.sync_pplxpl)
++
+         create_mode = create_action(
+             self.tr("Create Polygons"),
+             lambda: self.toggle_draw_mode(False, create_mode="polygon"),
+             shortcuts["create_polygon"],
+             "polygon",
+             self.tr("Start drawing polygons"),
+             enabled=False,
+         )
+         create_rectangle_mode = create_action(
+             self.tr("Create Rectangle"),
+             lambda: self.toggle_draw_mode(False, create_mode="rectangle"),
+             shortcuts["create_rectangle"],
+             "rectangle",
+             self.tr("Start drawing rectangles"),
+             enabled=False,
+         )
+         create_cirle_mode = create_action(
+             self.tr("Create Circle"),
+             lambda: self.toggle_draw_mode(False, create_mode="circle"),
+             shortcuts["create_circle"],
+             "circle",
+             self.tr("Start drawing circles"),
+             enabled=False,
+         )
+         create_line_mode = create_action(
+diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
+index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85f9df4c1f 100755
+--- a/anylabeling/views/labeling/label_widget.py
++++ b/anylabeling/views/labeling/label_widget.py
+@@ -806,97 +817,99 @@ class LabelingWidget(LabelDialog):
+             self.tr("&Auto Labeling"),
+             self.toggle_auto_labeling_widget,
+             shortcuts["auto_label"],
+             "brain",
+             self.tr("Auto Labeling"),
+         )
+ 
+         # Label list context menu.
+         label_menu = QtWidgets.QMenu()
+         utils.add_actions(label_menu, (edit, delete))
+         self.label_list.setContextMenuPolicy(Qt.CustomContextMenu)
+         self.label_list.customContextMenuRequested.connect(self.pop_label_list_menu)
+ 
+         # Store actions for further handling.
+         self.actions = utils.Struct(
+             save_auto=save_auto,
+             save_with_image_data=save_with_image_data,
+             change_output_dir=change_output_dir,
+             save=save,
+             save_as=save_as,
+             open=open_,
+             close=close,
+             delete_file=delete_file,
+             toggle_keep_prev_mode=toggle_keep_prev_mode,
+             toggle_auto_use_last_label_mode=toggle_auto_use_last_label_mode,
++            toggle_pplxpl_sync_mode=toggle_pplxpl_sync_mode,
+             delete=delete,
+             edit=edit,
+             duplicate=duplicate,
+             copy=copy,
+             paste=paste,
+             undo_last_point=undo_last_point,
+             undo=undo,
+             remove_point=remove_point,
+             set_image_label=set_image_label,
+             create_mode=create_mode,
+             edit_mode=edit_mode,
+             create_rectangle_mode=create_rectangle_mode,
+             create_cirle_mode=create_cirle_mode,
+             create_line_mode=create_line_mode,
+             create_point_mode=create_point_mode,
+             create_line_strip_mode=create_line_strip_mode,
+             zoom=zoom,
+             zoom_in=zoom_in,
+             zoom_out=zoom_out,
+             zoom_org=zoom_org,
+             keep_prev_scale=keep_prev_scale,
+             fit_window=fit_window,
+             fit_width=fit_width,
+             line_width=line_width_act,
+             fill_opacity=fill_opacity_act,
+             brightness_contrast=brightness_contrast,
+             show_cross_line=show_cross_line,
+             show_groups=show_groups,
+             show_texts=show_texts,
+             zoom_actions=zoom_actions,
+             open_next_image=open_next_image,
+             open_prev_image=open_prev_image,
+             file_menu_actions=(open_, opendir, save, save_as, close),
+             tool=(),
+             # XXX: need to add some actions here to activate the shortcut
+             editMenu=(
+                 edit,
+                 duplicate,
+                 delete,
+                 None,
+                 undo,
+                 undo_last_point,
+                 None,
+                 remove_point,
+                 None,
+                 toggle_keep_prev_mode,
+                 toggle_auto_use_last_label_mode,
++                toggle_pplxpl_sync_mode,
+                 None,
+                 set_image_label,
+             ),
+             # menu shown at right click
+             menu=(
+                 create_mode,
+                 create_rectangle_mode,
+                 create_cirle_mode,
+                 create_line_mode,
+                 create_point_mode,
+                 create_line_strip_mode,
+                 edit_mode,
+                 edit,
+                 duplicate,
+                 copy,
+                 paste,
+                 delete,
+                 undo,
+                 undo_last_point,
+                 remove_point,
+             ),
+             on_load_active=(
+                 close,
+                 create_mode,
+                 create_rectangle_mode,
+diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
+index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85f9df4c1f 100755
+--- a/anylabeling/views/labeling/label_widget.py
++++ b/anylabeling/views/labeling/label_widget.py
+@@ -1058,50 +1071,51 @@ class LabelingWidget(LabelDialog):
+         )
+ 
+         # Tool actions definition
+         self.actions.tool = (
+             # open_,
+             opendir,
+             open_next_image,
+             open_prev_image,
+             save,
+             delete_file,
+             None,
+             create_mode,
+             self.actions.create_rectangle_mode,
+             self.actions.create_cirle_mode,
+             self.actions.create_line_mode,
+             self.actions.create_point_mode,
+             self.actions.create_line_strip_mode,
+             edit_mode,
+             delete,
+             undo,
+             None,
+             zoom,
+             line_width_act,
+             fill_opacity_act,
+             fit_width,
++            toggle_pplxpl_sync_mode,
+             toggle_auto_labeling_widget,
+         )
+ 
+         # Create a movable dock widget for tools
+         self.tools_dock = QtWidgets.QDockWidget(
+             self.tr("..."), self.main_window
+         )  # Empty title
+         self.tools_dock.setObjectName("ToolsDock")
+         # Allow moving and detaching, but disable closing
+         self.tools_dock.setFeatures(
+             QtWidgets.QDockWidget.DockWidgetMovable
+             | QtWidgets.QDockWidget.DockWidgetFloatable
+         )
+ 
+         # We need visible handle, so don't hide the title bar completely
+         # self.tools_dock.setTitleBarWidget(QtWidgets.QWidget())
+ 
+         # Create toolbar widget to place inside dock
+         tools_widget = QtWidgets.QWidget()
+         tools_layout = QtWidgets.QVBoxLayout()
+         tools_layout.setContentsMargins(0, 0, 0, 0)
+         tools_layout.setSpacing(0)
+ 
+         # Create toolbar for tools
+         self.tools = ToolBar("Tools")
+diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
+index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85f9df4c1f 100755
+--- a/anylabeling/views/labeling/label_widget.py
++++ b/anylabeling/views/labeling/label_widget.py
+@@ -1360,50 +1374,52 @@ class LabelingWidget(LabelDialog):
+             self.actions.create_cirle_mode,
+             self.actions.create_line_mode,
+             self.actions.create_point_mode,
+             self.actions.create_line_strip_mode,
+             self.actions.edit_mode,
+         )
+         utils.add_actions(self.menus.edit, actions + self.actions.editMenu)
+ 
+     def set_dirty(self):
+         # Even if we autosave the file, we keep the ability to undo
+         self.actions.undo.setEnabled(self.canvas.is_shape_restorable)
+ 
+         if self._config["auto_save"] or self.actions.save_auto.isChecked():
+             label_file = osp.splitext(self.image_path)[0] + ".json"
+             if self.output_dir:
+                 label_file_without_path = osp.basename(label_file)
+                 label_file = osp.join(self.output_dir, label_file_without_path)
+             self.save_labels(label_file)
+             return
+         self.dirty = True
+         self.actions.save.setEnabled(True)
+         title = __appname__
+         if self.filename is not None:
+             title = f"{title} - {self.filename}*"
+         self.setWindowTitle(title)
++        if self.sync_pplxpl:
++            self.sync_annotations_to_folder()
+ 
+     def set_clean(self):
+         self.dirty = False
+         self.actions.save.setEnabled(False)
+         self.actions.create_mode.setEnabled(True)
+         self.actions.create_rectangle_mode.setEnabled(True)
+         self.actions.create_cirle_mode.setEnabled(True)
+         self.actions.create_line_mode.setEnabled(True)
+         self.actions.create_point_mode.setEnabled(True)
+         self.actions.create_line_strip_mode.setEnabled(True)
+         title = __appname__
+         if self.filename is not None:
+             title = f"{title} - {self.filename}"
+         self.setWindowTitle(title)
+ 
+         if self.has_label_file():
+             self.actions.delete_file.setEnabled(True)
+         else:
+             self.actions.delete_file.setEnabled(False)
+ 
+     def toggle_actions(self, value=True):
+         """Enable/Disable widgets which depend on an opened image."""
+         for act in self.actions.zoom_actions:
+             act.setEnabled(value)
+         for act in self.actions.on_load_active:
+diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
+index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85f9df4c1f 100755
+--- a/anylabeling/views/labeling/label_widget.py
++++ b/anylabeling/views/labeling/label_widget.py
+@@ -1908,50 +1924,52 @@ class LabelingWidget(LabelDialog):
+             key = item.text()
+             flag = item.checkState() == Qt.Checked
+             flags[key] = flag
+         try:
+             image_path = osp.relpath(self.image_path, osp.dirname(filename))
+             image_data = self.image_data if self._config["store_data"] else None
+             if osp.dirname(filename) and not osp.exists(osp.dirname(filename)):
+                 os.makedirs(osp.dirname(filename))
+             label_file.image_labels = self.other_data.get("image_labels", [])
+             label_file.save(
+                 filename=filename,
+                 shapes=shapes,
+                 image_path=image_path,
+                 image_data=image_data,
+                 image_height=self.image.height(),
+                 image_width=self.image.width(),
+                 other_data=self.other_data,
+                 flags=flags,
+             )
+             self.label_file = label_file
+             items = self.file_list_widget.findItems(self.image_path, Qt.MatchExactly)
+             if len(items) > 0:
+                 if len(items) != 1:
+                     raise RuntimeError("There are duplicate files.")
+                 items[0].setCheckState(Qt.Checked)
++            if self.sync_pplxpl:
++                self.sync_annotations_to_folder()
+             # disable allows next and previous image to proceed
+             # self.filename = filename
+             return True
+         except LabelFileError as e:
+             self.error_message(
+                 self.tr("Error saving label data"), self.tr("<b>%s</b>") % e
+             )
+             return False
+ 
+     def duplicate_selected_shape(self):
+         added_shapes = self.canvas.duplicate_selected_shapes()
+         self.label_list.clearSelection()
+         for shape in added_shapes:
+             self.add_label(shape)
+         self.set_dirty()
+ 
+     def paste_selected_shape(self):
+         self.load_shapes(self._copied_shapes, replace=False)
+         self.set_dirty()
+ 
+     def copy_selected_shape(self):
+         self._copied_shapes = [s.copy() for s in self.canvas.selected_shapes]
+         self.actions.paste.setEnabled(len(self._copied_shapes) > 0)
+ 
+     def label_selection_changed(self):
+diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
+index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85f9df4c1f 100755
+--- a/anylabeling/views/labeling/label_widget.py
++++ b/anylabeling/views/labeling/label_widget.py
+@@ -2696,50 +2714,129 @@ class LabelingWidget(LabelDialog):
+         )
+         if answer == mb.Discard:
+             return True
+         if answer == mb.Save:
+             self.save_file()
+             return True
+         # answer == mb.Cancel
+         return False
+ 
+     def error_message(self, title, message):
+         return QtWidgets.QMessageBox.critical(
+             self, title, f"<p><b>{title}</b></p>{message}"
+         )
+ 
+     def current_path(self):
+         return osp.dirname(str(self.filename)) if self.filename else "."
+ 
+     def toggle_keep_prev_mode(self):
+         self._config["keep_prev"] = not self._config["keep_prev"]
+         save_config(self._config)
+ 
+     def toggle_auto_use_last_label(self):
+         self._config["auto_use_last_label"] = not self._config["auto_use_last_label"]
+         save_config(self._config)
+ 
++    def toggle_pplxpl_sync(self):
++        """Toggle PPL-XPL label synchronization."""
++        self.sync_pplxpl = not self.sync_pplxpl
++        self._config["pplxpl_sync"] = self.sync_pplxpl
++        save_config(self._config)
++
++    def _get_current_shapes_and_flags(self):
++        """Return current shapes and flags formatted for saving."""
++        def format_shape(s):
++            data = s.other_data.copy()
++            data.update(
++                {
++                    "labels": s.labels,
++                    "text": s.text,
++                    "points": [(p.x(), p.y()) for p in s.points],
++                    "group_id": s.group_id,
++                    "shape_type": s.shape_type,
++                    "flags": s.flags,
++                }
++            )
++            return data
++
++        shapes = [
++            format_shape(item.shape())
++            for item in self.label_list
++            if item.shape().primary_label
++            not in [
++                AutoLabelingMode.OBJECT,
++                AutoLabelingMode.ADD,
++                AutoLabelingMode.REMOVE,
++            ]
++        ]
++        flags = {}
++        for i in range(self.flag_widget.count()):
++            item = self.flag_widget.item(i)
++            key = item.text()
++            flag = item.checkState() == Qt.Checked
++            flags[key] = flag
++        return shapes, flags
++
++    def sync_annotations_to_folder(self):
++        """Apply current annotations to all images in the opened folder."""
++        if not self.sync_pplxpl or not self.image_list:
++            return
++
++        shapes, flags = self._get_current_shapes_and_flags()
++
++        for img in self.image_list:
++            label_path = osp.splitext(img)[0] + ".json"
++            if self.output_dir:
++                label_file_without_path = osp.basename(label_path)
++                label_path = osp.join(self.output_dir, label_file_without_path)
++
++            if self._config["store_data"]:
++                img_data = LabelFile.load_image_file(img)
++                image = QtGui.QImage.fromData(img_data) if img_data else QtGui.QImage()
++            else:
++                img_data = None
++                reader = QtGui.QImageReader(img)
++                image = QtGui.QImage()
++                if reader.canRead():
++                    image = QtGui.QImage(img)
++
++            image_height = image.height() if not image.isNull() else None
++            image_width = image.width() if not image.isNull() else None
++
++            label_file = LabelFile()
++            label_file.image_labels = self.other_data.get("image_labels", [])
++            label_file.save(
++                filename=label_path,
++                shapes=shapes,
++                image_path=osp.relpath(img, osp.dirname(label_path)),
++                image_data=img_data,
++                image_height=image_height,
++                image_width=image_width,
++                other_data=self.other_data,
++                flags=flags,
++            )
++
+     def remove_selected_point(self):
+         self.canvas.remove_selected_point()
+         self.canvas.update()
+         if self.canvas.h_hape is not None and not self.canvas.h_hape.points:
+             self.canvas.delete_shape(self.canvas.h_hape)
+             self.remove_labels([self.canvas.h_hape])
+             self.set_dirty()
+             if self.no_shape():
+                 for act in self.actions.on_shapes_present:
+                     act.setEnabled(False)
+ 
+     def delete_selected_shape(self):
+         yes, no = QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No
+         msg = self.tr(
+             "You are about to permanently delete {} polygons, proceed anyway?"
+         ).format(len(self.canvas.selected_shapes))
+         if yes == QtWidgets.QMessageBox.warning(
+             self, self.tr("Attention"), msg, yes | no, yes
+         ):
+             self.remove_labels(self.canvas.delete_selected())
+             self.set_dirty()
+             if self.no_shape():
+                 for act in self.actions.on_shapes_present:
+                     act.setEnabled(False)
+ 
+
+'''
 ## 更新的功能点
 
 1,增加了轮廓线粗细、填充mask透明度可在界面调节的功能;
