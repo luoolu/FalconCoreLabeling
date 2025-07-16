@@ -170,6 +170,14 @@ File  Edit  View  Language  Theme  Label Sets  Tools  Help  Segment All
   选择create Polygon后，选中第一个点后，还是需要点击鼠标左键一个一个的打点，没有实现跟踪鼠标移动的轨迹的功能;
   目前还是需要点击鼠标左键一个一个的打点;应该是选择多边形，点击鼠标左键选择开始点后，就可以跟踪鼠标移动的轨迹，
   双击鼠标左键结束多边形的绘制;
+- - 已有功能：Freehand polygons begin immediately after the first click，
+double-clicking to finish the shape.现在的需求是中间增加暂停的操作，
+暂停后恢复使用指针，可以拖拽图像和缩放图像；
+- 第一次按空格键暂停鼠标轨迹跟踪，恢复使用指针；
+- 第二次按空格键从之前暂停的位置恢复标轨迹跟踪；
+Introduced a new pause_drawing_polygon flag for the canvas widget to track paused state during freehand drawing
+Added space-bar handling to toggle pausing and resuming freehand polygon drawing, switching cursors appropriately
+Reset the pause flag when finalizing a shape to ensure consistent state management
 需求7:多个轮廓多选删除，已有；
 需求8:单个实例或目标的文字描述标注，已有；
 需求9：弹出的标注框大小可以拉，标签列表长于目前的显示框，鼠标滚轮和方向键滑动选择，显示滚动条（目前没有）；
@@ -752,6 +760,7 @@ index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85
 4,增加了在用户标注界面可以配置标签列表和切换已经内置的多个标签列表的功能;
 5,增加多边形标注时，可以跟踪鼠标移动的轨迹的功能;
 6,增加使用SAM2 SegmentALL获取所有实例的轮廓；
+7,增加自由手多边形暂停功能;
 
 ## usage
 
