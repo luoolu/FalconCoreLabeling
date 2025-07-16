@@ -103,6 +103,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         self.loading_text = self.tr("Loading...")
         self.loading_angle = 0
         self.free_drawing_polygon = False
+        self.pause_drawing_polygon = False
 
     def set_loading(self, is_loading: bool, loading_text: str = None):
         """Set loading state"""
@@ -959,6 +960,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         self.store_shapes()
         self.current = None
         self.free_drawing_polygon = False
+        self.pause_drawing_polygon = False
         self.set_hiding(False)
         self.new_shape.emit()
         self.update()
@@ -1138,6 +1140,23 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
                 self.update()
             elif key == QtCore.Qt.Key_Return and self.can_close_shape():
                 self.finalise()
+            elif (
+                key == QtCore.Qt.Key_Space
+                and self.create_mode == "polygon"
+                and self.current is not None
+            ):
+                if not self.pause_drawing_polygon:
+                    # pause freehand drawing
+                    self.pause_drawing_polygon = True
+                    self.free_drawing_polygon = False
+                    self.drawing_polygon.emit(False)
+                    self.override_cursor(CURSOR_DEFAULT)
+                else:
+                    # resume freehand drawing
+                    self.pause_drawing_polygon = False
+                    self.free_drawing_polygon = True
+                    self.drawing_polygon.emit(True)
+                    self.override_cursor(CURSOR_DRAW)
             elif modifiers == QtCore.Qt.AltModifier:
                 self.snapping = False
         elif self.editing():
@@ -1201,6 +1220,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         else:
             self.current = None
             self.free_drawing_polygon = False
+            self.pause_drawing_polygon = False
             self.drawing_polygon.emit(False)
         self.update()
 
@@ -1245,6 +1265,7 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         self.pixmap = None
         self.shapes_backups = []
         self.free_drawing_polygon = False
+        self.pause_drawing_polygon = False
         self.update()
 
     def set_show_cross_line(self, enabled):
