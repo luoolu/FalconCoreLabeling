@@ -624,6 +624,14 @@ class LabelingWidget(LabelDialog):
             checked=self._config["keep_prev_scale"],
             enabled=True,
         )
+        keep_prev_loc = create_action(
+            self.tr("&Keep Previous Location"),
+            self.enable_keep_prev_loc,
+            tip=self.tr("Keep previous canvas location"),
+            checkable=True,
+            checked=self._config.get("keep_prev_loc", True),
+            enabled=True,
+        )
         fit_window = create_action(
             self.tr("&Fit Window"),
             self.set_fit_window,
@@ -861,6 +869,7 @@ class LabelingWidget(LabelDialog):
             zoom_out=zoom_out,
             zoom_org=zoom_org,
             keep_prev_scale=keep_prev_scale,
+            keep_prev_loc=keep_prev_loc,
             fit_window=fit_window,
             fit_width=fit_width,
             line_width=line_width_act,
@@ -1045,6 +1054,7 @@ class LabelingWidget(LabelDialog):
                 zoom_out,
                 zoom_org,
                 keep_prev_scale,
+                keep_prev_loc,
                 None,
                 fit_window,
                 fit_width,
@@ -1247,6 +1257,7 @@ class LabelingWidget(LabelDialog):
             Qt.Horizontal: {},
             Qt.Vertical: {},
         }  # key=filename, value=scroll_value
+        self.prev_image_size = None
 
         if filename is not None and osp.isdir(filename):
             self.import_image_folder(filename, load=False)
@@ -2116,6 +2127,11 @@ class LabelingWidget(LabelDialog):
         self.actions.keep_prev_scale.setChecked(enabled)
         save_config(self._config)
 
+    def enable_keep_prev_loc(self, enabled):
+        self._config["keep_prev_loc"] = enabled
+        self.actions.keep_prev_loc.setChecked(enabled)
+        save_config(self._config)
+
     def enable_show_cross_line(self, enabled):
         self._config["show_cross_line"] = enabled
         self.actions.show_cross_line.setChecked(enabled)
@@ -2239,6 +2255,8 @@ class LabelingWidget(LabelDialog):
     def load_file(self, filename=None):  # noqa: C901
         """Load the specified file, or the last opened file if None."""
 
+        prev_size = self.prev_image_size
+
         # For auto labeling, clear the previous marks
         # and inform the next files to be annotated
         self.clear_auto_labeling_marks()
@@ -2317,6 +2335,19 @@ class LabelingWidget(LabelDialog):
             return False
         self.image = image
         self.filename = filename
+        new_size = (self.image.width(), self.image.height())
+        same_size = prev_size is None or prev_size == new_size
+        if (
+            not same_size
+            and self._config.get("keep_prev_loc", True)
+        ):
+            QtWidgets.QMessageBox.warning(
+                self,
+                self.tr("Different Image Size"),
+                self.tr(
+                    "Cannot keep previous location because image sizes differ."
+                ),
+            )
         if self._config["keep_prev"]:
             prev_shapes = self.canvas.shapes
         self.canvas.load_pixmap(QtGui.QPixmap.fromImage(image))
@@ -2334,16 +2365,34 @@ class LabelingWidget(LabelDialog):
         self.canvas.setEnabled(True)
         # set zoom values
         is_initial_load = not self.zoom_values
+        prev_filename = self.recent_files[0] if self.recent_files else None
         if self.filename in self.zoom_values:
             self.zoom_mode = self.zoom_values[self.filename][0]
             self.set_zoom(self.zoom_values[self.filename][1])
-        elif is_initial_load or not self._config["keep_prev_scale"]:
+        elif (
+            is_initial_load
+            or not self._config["keep_prev_scale"]
+            or not same_size
+            or not prev_filename
+            or prev_filename not in self.zoom_values
+        ):
             self.adjust_scale(initial=True)
+        else:
+            self.zoom_mode = self.zoom_values[prev_filename][0]
+            self.set_zoom(self.zoom_values[prev_filename][1])
         # set scroll values
         for orientation in self.scroll_values:
             if self.filename in self.scroll_values[orientation]:
                 self.set_scroll(
                     orientation, self.scroll_values[orientation][self.filename]
+                )
+            elif (
+                self._config.get("keep_prev_loc", True)
+                and same_size
+                and prev_filename in self.scroll_values[orientation]
+            ):
+                self.set_scroll(
+                    orientation, self.scroll_values[orientation][prev_filename]
                 )
         # set brightness contrast values
         dialog = BrightnessContrastDialog(
@@ -2377,6 +2426,8 @@ class LabelingWidget(LabelDialog):
 
         # Save dock state after loading file (to capture any UI adjustments)
         QtCore.QTimer.singleShot(100, self.save_dock_state)
+
+        self.prev_image_size = new_size
 
         return True
 

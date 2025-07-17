@@ -220,6 +220,17 @@ Reset the pause flag when finalizing a shape to ensure consistent state manageme
 └── renxi1-2505.41_m139_s.json
 - anylabeling/views/labeling/label_widget.py
 - anylabeling/configs/anylabeling_config.yaml
+需求11：已有keep_prev_scale,现在需要增加keep previous location,
+前提是切换的下一张图像尺寸跟切换图像前的尺寸保持一致，否则给出提示；
+- 增加keep_prev_loc菜单键或按钮;
+- 缩放比例和在canvas上的位置同时保持一致，用于观察PPL-XPL图像里面的颗粒的变化；
+- 默认前提是切换前后的图像尺寸是一样的；
+- 目标是实现切换图像后，能看到不同偏光角度下的同一位置的物体的光性变化情况；
+- 默认是开启
+
+
+
+
 '''
 diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
 index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85f9df4c1f 100755
@@ -394,6 +405,7 @@ index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85
              zoom_out=zoom_out,
              zoom_org=zoom_org,
              keep_prev_scale=keep_prev_scale,
++            keep_prev_loc=keep_prev_loc,
              fit_window=fit_window,
              fit_width=fit_width,
              line_width=line_width_act,
