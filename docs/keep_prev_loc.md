@@ -19,7 +19,9 @@
 一起叠加放在canvas上， 当切换下一张图片时，打开状态使用切换前的图片的缩放状态和画布位置；
 - 目标是实现PPL-XPL图像的颗粒标注，因为颗粒在不同偏光图像上的位置没变；
 - 默认打开文件夹下的多个偏光角度图像的尺寸是一样的，当发现不一样时，给出友好提升，确保鲁棒性；
-
+Q:
+- 切换图像，视窗里面没变化；
+- canvas上面应该是放了多张图像，切换应
 
 
 '''
@@ -562,5 +564,162 @@ index 10aab3fca5105eae3eb962ff087dfb71b8e3a2ac..fb5628c6a8827f8a8b7d5e4acff19664
          assert not self.image.isNull(), "cannot paint null image"
          self.canvas.scale = 0.01 * self.zoom_widget.value()
          self.canvas.adjustSize()
+
+'''
+## Summary
+
+- Added new dependencies and imports for NumPy and OpenCV conversion utilities, enabling manipulation of image arrays
+
+- Implemented _load_pplxpl_overlay to read multiple images, verify matching dimensions, stack them, and return an averaged overlay image
+
+'''
+diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
+index fb5628c6a8827f8a8b7d5e4acff196649a9db6ba..924bbe604011352ca17735ed092626b49ffe3b48 undefined
+--- a/anylabeling/views/labeling/label_widget.py
++++ b/anylabeling/views/labeling/label_widget.py
+@@ -3,50 +3,55 @@ import html
+ import math
+ import os
+ import os.path as osp
+ import re
+ import webbrowser
+ import weakref
+ 
+ import imgviz
+ import natsort
+ from PyQt5 import QtCore, QtGui, QtWidgets
+ from PyQt5.QtCore import Qt, pyqtSlot
+ from PyQt5.QtWidgets import (
+     QHBoxLayout,
+     QLabel,
+     QPlainTextEdit,
+     QVBoxLayout,
+     QWhatsThis,
+     QMessageBox,
+ )
+ 
+ from anylabeling.services.auto_labeling.types import AutoLabelingMode
+ 
+ from anylabeling.app_info import __appname__
+ from anylabeling.config import get_config, save_config
+ from anylabeling.views.labeling import utils
++from anylabeling.views.labeling.utils.opencv import (
++    cv_img_to_qt_img,
++    qt_img_to_rgb_cv_img,
++)
++import numpy as np
+ from anylabeling.views.labeling.label_file import LabelFile, LabelFileError
+ from anylabeling.views.labeling.logger import logger
+ from anylabeling.views.labeling.shape import Shape
+ from anylabeling.views.labeling.widgets import (
+     AutoLabelingWidget,
+     BrightnessContrastDialog,
+     Canvas,
+     FileDialogPreview,
+     LabelDialog,
+     LabelListWidget,
+     LabelListWidgetItem,
+     ToolBar,
+     UniqueLabelQListWidget,
+     ZoomWidget,
+ )
+ from .widgets.export_dialog import ExportDialog
+ from anylabeling.styles import AppTheme
+ 
+ LABEL_COLORMAP = imgviz.label_colormap()
+ 
+ # Green for the first label
+ LABEL_COLORMAP[2] = LABEL_COLORMAP[1]
+ LABEL_COLORMAP[1] = [0, 180, 33]
+ 
+ 
+diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
+index fb5628c6a8827f8a8b7d5e4acff196649a9db6ba..924bbe604011352ca17735ed092626b49ffe3b48 undefined
+--- a/anylabeling/views/labeling/label_widget.py
++++ b/anylabeling/views/labeling/label_widget.py
+@@ -2845,50 +2850,83 @@ class LabelingWidget(LabelDialog):
+                 img_data = LabelFile.load_image_file(img)
+                 image = QtGui.QImage.fromData(img_data) if img_data else QtGui.QImage()
+             else:
+                 img_data = None
+                 reader = QtGui.QImageReader(img)
+                 image = QtGui.QImage()
+                 if reader.canRead():
+                     image = QtGui.QImage(img)
+ 
+             image_height = image.height() if not image.isNull() else None
+             image_width = image.width() if not image.isNull() else None
+ 
+             label_file = LabelFile()
+             label_file.image_labels = self.other_data.get("image_labels", [])
+             label_file.save(
+                 filename=label_path,
+                 shapes=shapes,
+                 image_path=osp.relpath(img, osp.dirname(label_path)),
+                 image_data=img_data,
+                 image_height=image_height,
+                 image_width=image_width,
+                 other_data=self.other_data,
+                 flags=flags,
+             )
+ 
++    def _load_pplxpl_overlay(self, files):
++        """Return stacked overlay image from given files.
++
++        Parameters
++        ----------
++        files : list[str]
++            Image paths to load and stack.
++
++        Returns
++        -------
++        QtGui.QImage | None
++            The overlay image or ``None`` if no valid image could be built.
++        """
++
++        images = []
++        for f in files:
++            img = QtGui.QImage(f)
++            if not img.isNull():
++                images.append(img)
++
++        if not images:
++            return None
++
++        w = images[0].width()
++        h = images[0].height()
++        if not all(img.width() == w and img.height() == h for img in images):
++            return None
++
++        arrs = [qt_img_to_rgb_cv_img(img) for img in images]
++        stacked = np.stack(arrs, axis=0)
++        overlay_arr = stacked.mean(axis=0).astype(np.uint8)
++        return cv_img_to_qt_img(overlay_arr)
++
+     def remove_selected_point(self):
+         self.canvas.remove_selected_point()
+         self.canvas.update()
+         if self.canvas.h_hape is not None and not self.canvas.h_hape.points:
+             self.canvas.delete_shape(self.canvas.h_hape)
+             self.remove_labels([self.canvas.h_hape])
+             self.set_dirty()
+             if self.no_shape():
+                 for act in self.actions.on_shapes_present:
+                     act.setEnabled(False)
+ 
+     def delete_selected_shape(self):
+         yes, no = QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No
+         msg = self.tr(
+             "You are about to permanently delete {} polygons, proceed anyway?"
+         ).format(len(self.canvas.selected_shapes))
+         if yes == QtWidgets.QMessageBox.warning(
+             self, self.tr("Attention"), msg, yes | no, yes
+         ):
+             self.remove_labels(self.canvas.delete_selected())
+             self.set_dirty()
+             if self.no_shape():
+                 for act in self.actions.on_shapes_present:
+                     act.setEnabled(False)
+ 
 
 '''

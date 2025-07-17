@@ -25,6 +25,12 @@ from anylabeling.services.auto_labeling.types import AutoLabelingMode
 from anylabeling.app_info import __appname__
 from anylabeling.config import get_config, save_config
 from anylabeling.views.labeling import utils
+from anylabeling.views.labeling.utils.opencv import (
+    cv_img_to_qt_img,
+    qt_img_to_rgb_cv_img,
+)
+import numpy as np
+from anylabeling.views.labeling.utils import opencv
 from anylabeling.views.labeling.label_file import LabelFile, LabelFileError
 from anylabeling.views.labeling.logger import logger
 from anylabeling.views.labeling.shape import Shape
@@ -2350,7 +2356,15 @@ class LabelingWidget(LabelDialog):
             )
         if self._config["keep_prev"]:
             prev_shapes = self.canvas.shapes
-        self.canvas.load_pixmap(QtGui.QPixmap.fromImage(image))
+        if self.sync_pplxpl:
+            pixmap = self._load_pplxpl_overlay(osp.dirname(filename))
+            if pixmap is not None:
+                self.image = pixmap.toImage()
+                self.canvas.load_pixmap(pixmap)
+            else:
+                self.canvas.load_pixmap(QtGui.QPixmap.fromImage(image))
+        else:
+            self.canvas.load_pixmap(QtGui.QPixmap.fromImage(image))
         flags = dict.fromkeys(self._config["flags"] or [], False)
         if self.label_file:
             self.load_labels(self.label_file.shapes)
@@ -2548,6 +2562,8 @@ class LabelingWidget(LabelDialog):
         if current_index - 1 >= 0:
             filename = self.image_list[current_index - 1]
             if filename:
+                if self.sync_pplxpl:
+                    self._copy_view_state(self.filename, filename)
                 self.load_file(filename)
 
         self._config["keep_prev"] = keep_prev
@@ -2576,12 +2592,15 @@ class LabelingWidget(LabelDialog):
                 filename = self.image_list[current_index + 1]
             else:
                 filename = self.image_list[-1]
+        prev_filename = self.filename
         self.filename = filename
 
         # Save dock state before changing images
         self.save_dock_state()
 
         if self.filename and load:
+            if self.sync_pplxpl and prev_filename:
+                self._copy_view_state(prev_filename, self.filename)
             self.load_file(self.filename)
 
         self._config["keep_prev"] = keep_prev
@@ -2793,6 +2812,38 @@ class LabelingWidget(LabelDialog):
         self._config["pplxpl_sync"] = self.sync_pplxpl
         save_config(self._config)
 
+    def _copy_view_state(self, src, dst):
+        """Copy zoom and scroll state from src file to dst file."""
+        if src in self.zoom_values:
+            self.zoom_values[dst] = self.zoom_values[src]
+        for orientation in self.scroll_values:
+            if src in self.scroll_values[orientation]:
+                self.scroll_values[orientation][dst] = self.scroll_values[orientation][src]
+
+    def _load_pplxpl_overlay(self, folder):
+        """Return a QPixmap stacking all images in a folder."""
+        exts = [f".{fmt.data().decode().lower()}" for fmt in QtGui.QImageReader.supportedImageFormats()]
+        files = [osp.join(folder, f) for f in os.listdir(folder)
+                 if osp.isfile(osp.join(folder, f)) and f.lower().endswith(tuple(exts))]
+        if not files:
+            return None
+        files = natsort.os_sorted(files)
+        images = [QtGui.QImage(f) for f in files if QtGui.QImage(f).isNull() is False]
+        if not images:
+            return None
+        w, h = images[0].width(), images[0].height()
+        for img in images[1:]:
+            if img.width() != w or img.height() != h:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    self.tr("Image size mismatch"),
+                    self.tr("Images in folder have different sizes. Using the first image only."),
+                )
+                return QtGui.QPixmap.fromImage(images[0])
+        arrs = [opencv.qt_img_to_rgb_cv_img(img) for img in images]
+        stack = np.mean(arrs, axis=0).astype(np.uint8)
+        return QtGui.QPixmap.fromImage(opencv.cv_img_to_qt_img(stack))
+
     def _get_current_shapes_and_flags(self):
         """Return current shapes and flags formatted for saving."""
 
@@ -2866,6 +2917,39 @@ class LabelingWidget(LabelDialog):
                 other_data=self.other_data,
                 flags=flags,
             )
+
+    def _load_pplxpl_overlay(self, files):
+        """Return stacked overlay image from given files.
+
+        Parameters
+        ----------
+        files : list[str]
+            Image paths to load and stack.
+
+        Returns
+        -------
+        QtGui.QImage | None
+            The overlay image or ``None`` if no valid image could be built.
+        """
+
+        images = []
+        for f in files:
+            img = QtGui.QImage(f)
+            if not img.isNull():
+                images.append(img)
+
+        if not images:
+            return None
+
+        w = images[0].width()
+        h = images[0].height()
+        if not all(img.width() == w and img.height() == h for img in images):
+            return None
+
+        arrs = [qt_img_to_rgb_cv_img(img) for img in images]
+        stacked = np.stack(arrs, axis=0)
+        overlay_arr = stacked.mean(axis=0).astype(np.uint8)
+        return cv_img_to_qt_img(overlay_arr)
 
     def remove_selected_point(self):
         self.canvas.remove_selected_point()
