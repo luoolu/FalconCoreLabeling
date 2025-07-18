@@ -227,7 +227,8 @@ Reset the pause flag when finalizing a shape to ensure consistent state manageme
 - 默认前提是切换前后的图像尺寸是一样的；
 - 目标是实现切换图像后，能看到不同偏光角度下的同一位置的物体的光性变化情况；
 - 默认是开启
-
+需求12：对在当前canvas上打开显示的图像增加裁剪的功能；
+需求13：顶部菜单栏和左侧的菜单栏适配常见的所有的分辨率，避免某些屏幕某个分辨率下某个菜单或图标找不到的问题；
 
 
 

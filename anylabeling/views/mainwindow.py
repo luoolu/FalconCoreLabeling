@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
 )
+from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QTimer, QEvent
 
 from ..app_info import __appdescription__, __appname__
@@ -71,7 +72,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(__appname__)
 
         # ---------- 菜单栏 ----------
-        self.menuBar()
+        menubar = self.menuBar()
+        screen = QApplication.primaryScreen()
+        dpi = screen.logicalDotsPerInch() if screen else 96
+        scale = dpi / 96.0
+        font = menubar.font()
+        font.setPointSizeF(font.pointSizeF() * scale)
+        menubar.setFont(font)
 
         # ---------- “Segment All” QAction ----------
         self.segment_action = QAction("Segment All", self)
@@ -375,11 +382,3 @@ class MainWindow(QMainWindow):
             QApplication.restoreOverrideCursor()
             self.statusBar().clearMessage()
             self.segment_action.setEnabled(True)
-
-
-
-
-
-
-
-

@@ -1138,11 +1138,21 @@ class LabelingWidget(LabelDialog):
         self.tools.setObjectName("ToolsToolBar")
         self.tools.setOrientation(Qt.Vertical)
         self.tools.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.tools.setIconSize(QtCore.QSize(24, 24))
+
+        # Scale icon and dock size based on screen dpi
+        screen = QtWidgets.QApplication.primaryScreen()
+        dpi = screen.logicalDotsPerInch() if screen else 96
+        scale = dpi / 96.0
+        icon_size = int(24 * scale)
+        dock_width = int(icon_size + 16)
+        self._icon_size = icon_size
+        self._dock_width = dock_width
+
+        self.tools.setIconSize(QtCore.QSize(icon_size, icon_size))
 
         # Set initial size constraints for vertical layout
-        self.tools_dock.setMinimumWidth(40)
-        self.tools_dock.setMaximumWidth(40)
+        self.tools_dock.setMinimumWidth(dock_width)
+        self.tools_dock.setMaximumWidth(dock_width)
 
         # Add actions to toolbar
         utils.add_actions(self.tools, self.actions.tool)
@@ -1364,8 +1374,8 @@ class LabelingWidget(LabelDialog):
         toolbar.setObjectName(f"{title}ToolBar")
         toolbar.setOrientation(Qt.Vertical)
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        toolbar.setIconSize(QtCore.QSize(24, 24))
-        toolbar.setMaximumWidth(40)
+        toolbar.setIconSize(QtCore.QSize(self._icon_size, self._icon_size))
+        toolbar.setMaximumWidth(self._dock_width)
         if actions:
             utils.add_actions(toolbar, actions)
         return toolbar
@@ -3554,17 +3564,16 @@ class LabelingWidget(LabelDialog):
         # If dock is moved to top or bottom areas, use horizontal layout
         if area == Qt.TopDockWidgetArea or area == Qt.BottomDockWidgetArea:
             self.tools.setOrientation(Qt.Horizontal)
-            # Adjust dock height for horizontal layout - including space for title bar
-            self.tools_dock.setMinimumHeight(65)  # Increased to accommodate title bar
-            self.tools_dock.setMaximumHeight(65)
+            height = int(self._icon_size + 30)
+            self.tools_dock.setMinimumHeight(height)
+            self.tools_dock.setMaximumHeight(height)
             # Reset width constraints
             self.tools_dock.setMinimumWidth(0)
             self.tools_dock.setMaximumWidth(16777215)  # Qt's QWIDGETSIZE_MAX
         else:  # Otherwise (left, right, or floating), use vertical layout
             self.tools.setOrientation(Qt.Vertical)
-            # Adjust dock width for vertical layout
-            self.tools_dock.setMinimumWidth(40)
-            self.tools_dock.setMaximumWidth(40)
+            self.tools_dock.setMinimumWidth(self._dock_width)
+            self.tools_dock.setMaximumWidth(self._dock_width)
             # Reset height constraints
             self.tools_dock.setMinimumHeight(0)
             self.tools_dock.setMaximumHeight(16777215)  # Qt's QWIDGETSIZE_MAX
@@ -3573,9 +3582,7 @@ class LabelingWidget(LabelDialog):
             if not area:  # Qt returns 0 for floating docks
                 self.tools_dock.setMinimumWidth(0)
                 self.tools_dock.setMaximumWidth(16777215)
-                # Set a good default size for the floating toolbox
-                self.tools_dock.resize(40, 300)
-                # Ensure the toolbar is vertical in floating mode
+                self.tools_dock.resize(self._dock_width, 300)
                 self.tools.setOrientation(Qt.Vertical)
 
         # Force toolbar to update its layout
