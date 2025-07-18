@@ -229,7 +229,7 @@ Reset the pause flag when finalizing a shape to ensure consistent state manageme
 - 默认是开启
 需求12：对在当前canvas上打开显示的图像增加裁剪的功能；
 需求13：顶部菜单栏和左侧的菜单栏适配常见的所有的分辨率，避免某些屏幕某个分辨率下某个菜单或图标找不到的问题；
-
+Scale toolbars dynamically with window size;
 
 
 '''

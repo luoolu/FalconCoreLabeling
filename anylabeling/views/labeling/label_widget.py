@@ -1143,16 +1143,16 @@ class LabelingWidget(LabelDialog):
         screen = QtWidgets.QApplication.primaryScreen()
         dpi = screen.logicalDotsPerInch() if screen else 96
         scale = dpi / 96.0
-        icon_size = int(24 * scale)
-        dock_width = int(icon_size + 16)
-        self._icon_size = icon_size
-        self._dock_width = dock_width
+        base_icon_size = int(24 * scale)
+        self._base_icon_size = base_icon_size
+        self._icon_size = base_icon_size
+        self._dock_width = int(base_icon_size + 16)
 
-        self.tools.setIconSize(QtCore.QSize(icon_size, icon_size))
+        self.tools.setIconSize(QtCore.QSize(self._icon_size, self._icon_size))
 
         # Set initial size constraints for vertical layout
-        self.tools_dock.setMinimumWidth(dock_width)
-        self.tools_dock.setMaximumWidth(dock_width)
+        self.tools_dock.setMinimumWidth(self._dock_width)
+        self.tools_dock.setMaximumWidth(self._dock_width)
 
         # Add actions to toolbar
         utils.add_actions(self.tools, self.actions.tool)
@@ -1292,6 +1292,7 @@ class LabelingWidget(LabelDialog):
         # state = self.settings.value("window/state", QtCore.QByteArray())
         self.resize(size)
         self.move(position)
+        self.update_toolbar_scale()
         # or simply:
         # self.restoreGeometry(settings['window/geometry']
 
@@ -2474,6 +2475,9 @@ class LabelingWidget(LabelDialog):
 
         self._resize_timer.start(100)
 
+        # Update toolbar scaling to match new window size
+        self.update_toolbar_scale()
+
     def paint_canvas(self):
         assert not self.image.isNull(), "cannot paint null image"
         self.canvas.scale = 0.01 * self.zoom_widget.value()
@@ -3590,3 +3594,22 @@ class LabelingWidget(LabelDialog):
 
         # Save the dock state
         self.save_dock_state()
+
+    def update_toolbar_scale(self):
+        """Scale toolbar icon size based on current window width."""
+        if not hasattr(self, "_base_icon_size"):
+            return
+
+        # Scale relative to a 1024px wide window and clamp the factor
+        window_scale = self.main_window.width() / 1024
+        window_scale = max(0.5, min(1.5, window_scale))
+
+        icon_size = int(self._base_icon_size * window_scale)
+        if icon_size == self._icon_size:
+            return
+
+        self._icon_size = icon_size
+        self._dock_width = int(icon_size + 16)
+
+        self.tools.setIconSize(QtCore.QSize(icon_size, icon_size))
+        self.on_tools_dock_location_changed()
