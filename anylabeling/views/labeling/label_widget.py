@@ -111,7 +111,9 @@ class LabelingWidget(LabelDialog):
             *self._config["shape"]["hvertex_fill_color"]
         )
         Shape.line_width = self._config["shape"].get("line_width", 2)
-        Shape.fill_opacity = self._config["shape"].get("fill_opacity", Shape.fill_color.alpha())
+        Shape.fill_opacity = self._config["shape"].get(
+            "fill_opacity", Shape.fill_color.alpha()
+        )
         Shape.fill_color.setAlpha(Shape.fill_opacity)
         Shape.select_fill_color.setAlpha(Shape.fill_opacity)
 
@@ -1679,7 +1681,10 @@ class LabelingWidget(LabelDialog):
     def edit_image_label(self):
         text, flags, _ = self.label_dialog.pop_up(
             text=", ".join(
-                self.label_file.image_labels if self.label_file else self.other_data.get("image_labels", [])),
+                self.label_file.image_labels
+                if self.label_file
+                else self.other_data.get("image_labels", [])
+            ),
             flags={},
             group_id=None,
         )
@@ -1690,7 +1695,9 @@ class LabelingWidget(LabelDialog):
             if not self.validate_label(lb):
                 self.error_message(
                     self.tr("Invalid label"),
-                    self.tr("Invalid label '{}' with validation type '{}'").format(lb, self._config["validate_label"]),
+                    self.tr("Invalid label '{}' with validation type '{}'").format(
+                        lb, self._config["validate_label"]
+                    ),
                 )
                 return
         self.other_data["image_labels"] = labels
@@ -2354,16 +2361,11 @@ class LabelingWidget(LabelDialog):
         self.filename = filename
         new_size = (self.image.width(), self.image.height())
         same_size = prev_size is None or prev_size == new_size
-        if (
-            not same_size
-            and self._config.get("keep_prev_loc", True)
-        ):
+        if not same_size and self._config.get("keep_prev_loc", True):
             QtWidgets.QMessageBox.warning(
                 self,
                 self.tr("Different Image Size"),
-                self.tr(
-                    "Cannot keep previous location because image sizes differ."
-                ),
+                self.tr("Cannot keep previous location because image sizes differ."),
             )
         if self._config["keep_prev"]:
             prev_shapes = self.canvas.shapes
@@ -2552,6 +2554,28 @@ class LabelingWidget(LabelDialog):
         if self.may_continue():
             self.load_file(filename)
 
+    def _update_canvas_image(self, filename):
+        """Load a new image onto the canvas without altering shapes."""
+        image_data = LabelFile.load_image_file(filename)
+        image = QtGui.QImage.fromData(image_data) if image_data else QtGui.QImage()
+
+        pixmap = None
+        if self.sync_pplxpl:
+            pixmap = self._load_pplxpl_overlay(osp.dirname(filename))
+        if pixmap is None:
+            pixmap = QtGui.QPixmap.fromImage(image)
+
+        if pixmap.isNull():
+            return False
+
+        self.image = pixmap.toImage()
+        self.image_path = filename
+        self.image_data = image_data
+        self.canvas.load_pixmap(pixmap, clear_shapes=False)
+        self.paint_canvas()
+        self.prev_image_size = (self.image.width(), self.image.height())
+        return True
+
     def open_prev_image(self, _value=False):
         keep_prev = self._config["keep_prev"]
         if QtWidgets.QApplication.keyboardModifiers() == (
@@ -2578,7 +2602,10 @@ class LabelingWidget(LabelDialog):
             if filename:
                 if self.sync_pplxpl:
                     self._copy_view_state(self.filename, filename)
-                self.load_file(filename)
+                    self.filename = filename
+                    self._update_canvas_image(filename)
+                else:
+                    self.load_file(filename)
 
         self._config["keep_prev"] = keep_prev
         save_config(self._config)
@@ -2615,7 +2642,9 @@ class LabelingWidget(LabelDialog):
         if self.filename and load:
             if self.sync_pplxpl and prev_filename:
                 self._copy_view_state(prev_filename, self.filename)
-            self.load_file(self.filename)
+                self._update_canvas_image(self.filename)
+            else:
+                self.load_file(self.filename)
 
         self._config["keep_prev"] = keep_prev
         save_config(self._config)
@@ -2832,13 +2861,43 @@ class LabelingWidget(LabelDialog):
             self.zoom_values[dst] = self.zoom_values[src]
         for orientation in self.scroll_values:
             if src in self.scroll_values[orientation]:
-                self.scroll_values[orientation][dst] = self.scroll_values[orientation][src]
+                self.scroll_values[orientation][dst] = self.scroll_values[orientation][
+                    src
+                ]
+
+            def _update_canvas_image(self, filename):
+                """Load a new image onto the canvas without altering shapes."""
+                image_data = LabelFile.load_image_file(filename)
+                image = QtGui.QImage.fromData(image_data) if image_data else QtGui.QImage()
+
+                pixmap = None
+                if self.sync_pplxpl:
+                    pixmap = self._load_pplxpl_overlay(osp.dirname(filename))
+                if pixmap is None:
+                    pixmap = QtGui.QPixmap.fromImage(image)
+
+                if pixmap.isNull():
+                    return False
+
+                self.image = pixmap.toImage()
+                self.image_path = filename
+                self.image_data = image_data
+                self.canvas.load_pixmap(pixmap, clear_shapes=False)
+                self.paint_canvas()
+                self.prev_image_size = (self.image.width(), self.image.height())
+                return True
 
     def _load_pplxpl_overlay(self, folder):
         """Return a QPixmap stacking all images in a folder."""
-        exts = [f".{fmt.data().decode().lower()}" for fmt in QtGui.QImageReader.supportedImageFormats()]
-        files = [osp.join(folder, f) for f in os.listdir(folder)
-                 if osp.isfile(osp.join(folder, f)) and f.lower().endswith(tuple(exts))]
+        exts = [
+            f".{fmt.data().decode().lower()}"
+            for fmt in QtGui.QImageReader.supportedImageFormats()
+        ]
+        files = [
+            osp.join(folder, f)
+            for f in os.listdir(folder)
+            if osp.isfile(osp.join(folder, f)) and f.lower().endswith(tuple(exts))
+        ]
         if not files:
             return None
         files = natsort.os_sorted(files)
@@ -2851,7 +2910,9 @@ class LabelingWidget(LabelDialog):
                 QtWidgets.QMessageBox.warning(
                     self,
                     self.tr("Image size mismatch"),
-                    self.tr("Images in folder have different sizes. Using the first image only."),
+                    self.tr(
+                        "Images in folder have different sizes. Using the first image only."
+                    ),
                 )
                 return QtGui.QPixmap.fromImage(images[0])
         arrs = [opencv.qt_img_to_rgb_cv_img(img) for img in images]
@@ -3247,7 +3308,9 @@ class LabelingWidget(LabelDialog):
                 # Update unique label list
                 for lb in shape.labels:
                     if not self.unique_label_list.find_items_by_label(lb):
-                        unique_label_item = self.unique_label_list.create_item_from_label(lb)
+                        unique_label_item = (
+                            self.unique_label_list.create_item_from_label(lb)
+                        )
                         self.unique_label_list.addItem(unique_label_item)
                         rgb = self._get_rgb_by_label(lb)
                         self.unique_label_list.set_item_label(
@@ -3430,6 +3493,7 @@ class LabelingWidget(LabelDialog):
         save_config(self._config)
         self.update_unique_label_list()
         self.update_label_dialog_labels()
+
     def save_dock_state(self, force=False):
         """Save dock state to config with error handling.
 
