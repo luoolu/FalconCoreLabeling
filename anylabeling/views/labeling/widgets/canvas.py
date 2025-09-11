@@ -104,6 +104,8 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         self.loading_angle = 0
         self.free_drawing_polygon = False
         self.pause_drawing_polygon = False
+        self.is_selecting_region = False
+        self.region_path = QtGui.QPainterPath()
 
     def set_loading(self, is_loading: bool, loading_text: str = None):
         """Set loading state"""
@@ -268,6 +270,11 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
             return
 
         self.prev_move_point = pos
+        if self.is_selecting_region:
+            if QtCore.Qt.LeftButton & ev.buttons():
+                self.region_path.lineTo(pos)
+                self.update()
+            return
 
         # Throttle the update call for now until more optimization is made
         current_time = time()
@@ -434,6 +441,12 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         if self.is_loading:
             return
         pos = self.transform_pos(ev.localPos())
+        if self.is_selecting_region:
+            if ev.button() == QtCore.Qt.LeftButton:
+                self.left_button_down = True
+                self.region_path = QtGui.QPainterPath()
+                self.region_path.moveTo(pos)
+            return
         if ev.button() == QtCore.Qt.LeftButton:
             self.left_button_down = True
             if self.drawing():
@@ -502,6 +515,13 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         - 其他形状模式、编辑模式和右键逻辑保持不变。
         """
         if self.is_loading:
+            return
+        if self.is_selecting_region and ev.button() == QtCore.Qt.LeftButton:
+            self.left_button_down = False
+            self.region_path.closeSubpath()
+            self.select_shapes_by_path(self.region_path)
+            self.is_selecting_region = False
+            self.update()
             return
 
         # ---------- 右键释放：菜单 / 复制移动 ----------
@@ -608,6 +628,25 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         self.set_hiding()
         self.selection_changed.emit(shapes)
         self.update()
+
+    def select_shapes_by_path(self, path: QtGui.QPainterPath):
+        """Select shapes that fall within or touch the given path."""
+        shapes = []
+        for shape in self.shapes:
+            if self.is_visible(shape):
+                shape_path = shape.make_path()
+                if shape.is_closed():
+                    shape_path.closeSubpath()
+                if path.contains(shape_path) or path.intersects(shape_path):
+                    shapes.append(shape)
+        self.selection_changed.emit(shapes)
+        self.update()
+
+    def start_region_selection(self):
+        """Begin region selection with freehand path."""
+        self.mode = self.EDIT
+        self.is_selecting_region = True
+        self.region_path = QtGui.QPainterPath()
 
     def select_shape_point(self, point, multiple_selection_mode):
         """Select the first shape created which contains this point."""
@@ -845,6 +884,14 @@ class Canvas(QtWidgets.QWidget):  # pylint: disable=too-many-public-methods, too
         if self.selected_shapes_copy:
             for s in self.selected_shapes_copy:
                 s.paint(p)
+        if self.is_selecting_region and not self.region_path.isEmpty():
+            pen = QtGui.QPen(
+                QtGui.QColor('#FF0000'),
+                max(1, int(round(1.0 / Shape.scale))),
+                Qt.DashLine,
+            )
+            p.setPen(pen)
+            p.drawPath(self.region_path)
 
         if (
             self.fill_drawing()

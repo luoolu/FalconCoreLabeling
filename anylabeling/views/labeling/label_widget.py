@@ -498,6 +498,15 @@ class LabelingWidget(LabelDialog):
             enabled=True,
         )
 
+        select_region = create_action(
+            self.tr("Select Region"),
+            self.canvas.start_region_selection,
+            shortcuts.get("select_region", "Ctrl+Shift+R"),
+            "scissors",
+            self.tr("Select shapes within a drawn region"),
+            enabled=False,
+        )
+
         delete = create_action(
             self.tr("Delete"),
             self.delete_selected_shape,
@@ -861,6 +870,7 @@ class LabelingWidget(LabelDialog):
             duplicate=duplicate,
             copy=copy,
             paste=paste,
+            select_region=select_region,
             undo_last_point=undo_last_point,
             undo=undo,
             remove_point=remove_point,
@@ -895,6 +905,7 @@ class LabelingWidget(LabelDialog):
             editMenu=(
                 edit,
                 duplicate,
+                select_region,
                 delete,
                 None,
                 undo,
@@ -935,6 +946,7 @@ class LabelingWidget(LabelDialog):
                 create_point_mode,
                 create_line_strip_mode,
                 edit_mode,
+                select_region,
                 brightness_contrast,
             ),
             on_shapes_present=(save_as, hide_all, show_all),
@@ -1104,6 +1116,7 @@ class LabelingWidget(LabelDialog):
             self.actions.create_point_mode,
             self.actions.create_line_strip_mode,
             edit_mode,
+            select_region,
             delete,
             undo,
             None,
@@ -1508,6 +1521,7 @@ class LabelingWidget(LabelDialog):
         self.actions.undo_last_point.setEnabled(drawing)
         self.actions.undo.setEnabled(not drawing)
         self.actions.delete.setEnabled(not drawing)
+        self.actions.select_region.setEnabled(not drawing)
 
     def toggle_draw_mode(
         self, edit=True, create_mode="rectangle", disable_auto_labeling=True
@@ -1626,11 +1640,12 @@ class LabelingWidget(LabelDialog):
 
         if not self.canvas.editing():
             return
-        if not item:
-            item = self.current_item()
-        if item is None:
+        items = self.label_list.selected_items()
+        if not items and item:
+            items = [item]
+        if not items:
             return
-        shape = item.shape()
+        shape = items[0].shape()
         if shape is None:
             return
         text, flags, group_id = self.label_dialog.pop_up(
@@ -1650,32 +1665,31 @@ class LabelingWidget(LabelDialog):
                     ),
                 )
                 return
-        shape.label = text
-        shape.flags = flags
-        shape.group_id = group_id
+        for it in items:
+            shape = it.shape()
+            shape.label = text
+            shape.flags = flags
+            shape.group_id = group_id
 
-        # Add to label history
-        for lb in shape.labels:
-            self.label_dialog.add_label_history(lb)
+            # Add to label history and update unique label list
+            for lb in shape.labels:
+                self.label_dialog.add_label_history(lb)
+                if not self.unique_label_list.find_items_by_label(lb):
+                    unique_label_item = self.unique_label_list.create_item_from_label(lb)
+                    self.unique_label_list.addItem(unique_label_item)
+                    rgb = self._get_rgb_by_label(lb)
+                    self.unique_label_list.set_item_label(unique_label_item, lb, rgb)
 
-        # Update unique label list
-        for lb in shape.labels:
-            if not self.unique_label_list.find_items_by_label(lb):
-                unique_label_item = self.unique_label_list.create_item_from_label(lb)
-                self.unique_label_list.addItem(unique_label_item)
-                rgb = self._get_rgb_by_label(lb)
-                self.unique_label_list.set_item_label(unique_label_item, lb, rgb)
-
-        self._update_shape_color(shape)
-        if shape.group_id is None:
-            color = shape.fill_color.getRgb()[:3]
-            item.setText(
-                '{} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
-                    html.escape(shape.label), *color
+            self._update_shape_color(shape)
+            if shape.group_id is None:
+                color = shape.fill_color.getRgb()[:3]
+                it.setText(
+                    '{} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
+                        html.escape(shape.label), *color
+                    )
                 )
-            )
-        else:
-            item.setText(f"{shape.label} ({shape.group_id})")
+            else:
+                it.setText(f"{shape.label} ({shape.group_id})")
         self.set_dirty()
 
     def edit_image_label(self):

@@ -230,7 +230,17 @@ Reset the pause flag when finalizing a shape to ensure consistent state manageme
 需求12：对在当前canvas上打开显示的图像增加裁剪的功能；
 需求13：顶部菜单栏和左侧的菜单栏适配常见的所有的分辨率，避免某些屏幕某个分辨率下某个菜单或图标找不到的问题；
 Scale toolbars dynamically with window size;
+需求14：
+- 增加区域选择功能，鼠标自由画一个区域，该区域的所有轮廓可以一起编辑为一个或多个label（或者类别），也可以一起删除；
+Summary
+Introduced region-based selection in the canvas by tracking a freehand path and selecting shapes whose bounds fall within the drawn region, with mouse events initiating, updating, and finalizing the lasso path on screen
 
+Added a “Select Region” action to the labeling toolbar, allowing users to trigger the region-selection tool directly from the interface
+
+Enhanced label editing so that edits apply to all currently selected shapes, enabling batch relabeling or deletion after a region selection
+问题：
+目前我选择的区域，跟实际被选中的轮廓有差异，有些轮廓在我选择区域的时候明明是在范围内的，但是没被选中；
+期待的是在我选择的区域的所有轮廓都需要被选中，同时支持编辑（批量改label或删除轮廓）
 
 '''
 diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
