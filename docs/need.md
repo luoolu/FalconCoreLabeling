@@ -241,7 +241,8 @@ Enhanced label editing so that edits apply to all currently selected shapes, ena
 问题：
 目前我选择的区域，跟实际被选中的轮廓有差异，有些轮廓在我选择区域的时候明明是在范围内的，但是没被选中；
 期待的是在我选择的区域的所有轮廓都需要被选中，同时支持编辑（批量改label或删除轮廓）
-
+目前区域选择功能能正常选择，然后区域内被选中的多个轮廓可以被批量删除，但区域内被选中的多个轮廓不能修改label；
+期望的是选择任意区域，区域内被选中的多个轮廓可以被批量删除，也可以批量修改label
 '''
 diff --git a/anylabeling/views/labeling/label_widget.py b/anylabeling/views/labeling/label_widget.py
 index e269ad361d6d80c83899a1f818b1f8b488afadcd..a3ec20953cc0dc665fd75703d74aac85f9df4c1f 100755

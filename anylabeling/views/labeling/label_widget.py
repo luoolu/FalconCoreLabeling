@@ -815,7 +815,7 @@ class LabelingWidget(LabelDialog):
             self.edit_label,
             shortcuts["edit_label"],
             "edit",
-            self.tr("Modify the label of the selected polygon"),
+            self.tr("Modify the label of the selected polygons"),
             enabled=False,
         )
         set_image_label = create_action(
@@ -1764,7 +1764,7 @@ class LabelingWidget(LabelDialog):
         self.actions.delete.setEnabled(n_selected)
         self.actions.duplicate.setEnabled(n_selected)
         self.actions.copy.setEnabled(n_selected)
-        self.actions.edit.setEnabled(n_selected == 1)
+        self.actions.edit.setEnabled(n_selected)
         self.set_text_editing(True)
 
     def update_unique_label_list(self):
