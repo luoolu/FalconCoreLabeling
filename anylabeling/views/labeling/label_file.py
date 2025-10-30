@@ -12,6 +12,8 @@ from .logger import logger
 
 PIL.Image.MAX_IMAGE_PIXELS = None
 
+FOLDER_SYNC_SENTINEL = "__FOLDER_SYNC__"
+
 
 @contextlib.contextmanager
 def io_open(name, mode):
@@ -32,6 +34,7 @@ class LabelFile:
         self.image_path = None
         self.image_data = None
         self.image_labels = []
+        self.is_folder_sync = False
         if filename is not None:
             self.load(filename)
         self.filename = filename
@@ -83,19 +86,23 @@ class LabelFile:
             if version is None:
                 logger.warning("Loading JSON file (%s) of unknown version", filename)
 
-            if data["imageData"] is not None:
-                image_data = base64.b64decode(data["imageData"])
-            else:
+            stored_image_path = data.get("imagePath")
+            image_data = None
+            raw_image_data = data.get("imageData")
+            if raw_image_data is not None:
+                image_data = base64.b64decode(raw_image_data)
+            elif stored_image_path and stored_image_path != FOLDER_SYNC_SENTINEL:
                 # relative path from label file to relative path from cwd
-                image_path = osp.join(osp.dirname(filename), data["imagePath"])
+                image_path = osp.join(osp.dirname(filename), stored_image_path)
                 image_data = self.load_image_file(image_path)
             flags = data.get("flags") or {}
-            image_path = data["imagePath"]
-            self._check_image_height_and_width(
-                base64.b64encode(image_data).decode("utf-8"),
-                data.get("imageHeight"),
-                data.get("imageWidth"),
-            )
+            image_path = stored_image_path
+            if image_data is not None:
+                self._check_image_height_and_width(
+                    base64.b64encode(image_data).decode("utf-8"),
+                    data.get("imageHeight"),
+                    data.get("imageWidth"),
+                )
             shapes = []
             for s in data["shapes"]:
                 labels = s.get("labels")
@@ -119,6 +126,9 @@ class LabelFile:
         for key, value in data.items():
             if key not in keys:
                 other_data[key] = value
+        self.is_folder_sync = bool(other_data.get("folderSync", False)) or (
+            image_path == FOLDER_SYNC_SENTINEL
+        )
 
         # Add new fields if not available
         other_data["text"] = other_data.get("text", "")
@@ -168,6 +178,8 @@ class LabelFile:
             )
         if other_data is None:
             other_data = {}
+        else:
+            other_data = dict(other_data)
         if flags is None:
             flags = {}
         data = {
@@ -179,6 +191,9 @@ class LabelFile:
             "imageHeight": image_height,
             "imageWidth": image_width,
         }
+        if image_path == FOLDER_SYNC_SENTINEL:
+            data["folderSync"] = True
+            other_data.pop("folderSync", None)
         if self.image_labels:
             data["imageLabels"] = self.image_labels
         for key, value in other_data.items():

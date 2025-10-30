@@ -10,7 +10,7 @@ from . import utils
 
 
 DEFAULT_LINE_COLOR = QtGui.QColor(0, 255, 0, 128)  # bf hovering
-DEFAULT_FILL_COLOR = QtGui.QColor(100, 100, 100, 100)  # hovering
+DEFAULT_FILL_COLOR = QtGui.QColor(100, 100, 100, 0)  # hovering
 DEFAULT_SELECT_LINE_COLOR = QtGui.QColor(255, 255, 255)  # selected
 DEFAULT_SELECT_FILL_COLOR = QtGui.QColor(0, 255, 0, 155)  # selected
 DEFAULT_VERTEX_FILL_COLOR = QtGui.QColor(0, 255, 0, 255)  # hovering
@@ -39,7 +39,7 @@ class Shape:
     select_fill_color = DEFAULT_SELECT_FILL_COLOR
     vertex_fill_color = DEFAULT_VERTEX_FILL_COLOR
     hvertex_fill_color = DEFAULT_HVERTEX_FILL_COLOR
-    line_width = 2
+    line_width = 3
     fill_opacity = DEFAULT_FILL_COLOR.alpha()
     point_type = P_ROUND
     point_size = 4
@@ -71,6 +71,8 @@ class Shape:
         self.shape_type = shape_type
         self.flags = flags
         self.other_data = {}
+        self._path_cache = None
+        self._path_cache_dirty = True
 
         self._highlight_index = None
         self._highlight_mode = self.NEAR_VERTEX
@@ -90,6 +92,15 @@ class Shape:
             self.line_color = line_color
 
         self.shape_type = shape_type
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop("_path_cache", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._path_cache = None
 
     @property
     def label(self):
@@ -131,6 +142,12 @@ class Shape:
     def close(self):
         """Close the shape"""
         self._closed = True
+        self.invalidate_path_cache()
+
+    def invalidate_path_cache(self):
+        """Mark cached painter path as dirty."""
+        self._path_cache = None
+        self._path_cache_dirty = True
 
     def add_point(self, point):
         """Add a point"""
@@ -138,6 +155,7 @@ class Shape:
             self.close()
         else:
             self.points.append(point)
+            self.invalidate_path_cache()
 
     def can_add_point(self):
         """Check if shape supports more points"""
@@ -146,16 +164,20 @@ class Shape:
     def pop_point(self):
         """Remove and return the last point of the shape"""
         if self.points:
-            return self.points.pop()
+            point = self.points.pop()
+            self.invalidate_path_cache()
+            return point
         return None
 
     def insert_point(self, i, point):
         """Insert a point to a specific index"""
         self.points.insert(i, point)
+        self.invalidate_path_cache()
 
     def remove_point(self, i):
         """Remove point from a specific index"""
         self.points.pop(i)
+        self.invalidate_path_cache()
 
     def is_closed(self):
         """Check if the shape is closed"""
@@ -164,6 +186,7 @@ class Shape:
     def set_open(self):
         """Set shape to open - (_close=False)"""
         self._closed = False
+        self.invalidate_path_cache()
 
     def get_rect_from_line(self, pt1, pt2):
         """Get rectangle from diagonal line"""
@@ -173,71 +196,64 @@ class Shape:
 
     def paint(self, painter: QtGui.QPainter):  # noqa: max-complexity: 18
         """Paint shape using QPainter"""
-        if self.points:
-            color = self.select_line_color if self.selected else self.line_color
-            pen = QtGui.QPen(color)
-            # Try using integer sizes for smoother drawing(?)
-            pen.setWidth(max(1, int(round(self.line_width / self.scale))))
-            painter.setPen(pen)
+        if not self.points:
+            return
 
-            line_path = QtGui.QPainterPath()
-            vrtx_path = QtGui.QPainterPath()
+        color = self.select_line_color if self.selected else self.line_color
+        pen = QtGui.QPen(color)
+        pen.setWidth(max(1, int(round(self.line_width / self.scale))))
+        painter.setPen(pen)
 
-            if self.shape_type == "rectangle":
-                assert len(self.points) in [1, 2]
-                if len(self.points) == 2:
-                    rectangle = self.get_rect_from_line(*self.points)
-                    line_path.addRect(rectangle)
-                if self.selected:
-                    for i in range(len(self.points)):
-                        self.draw_vertex(vrtx_path, i)
-            elif self.shape_type == "circle":
-                assert len(self.points) in [1, 2]
-                if len(self.points) == 2:
-                    rectangle = self.get_circle_rect_from_line(self.points)
-                    line_path.addEllipse(rectangle)
-                if self.selected:
-                    for i in range(len(self.points)):
-                        self.draw_vertex(vrtx_path, i)
-            elif self.shape_type == "linestrip":
-                line_path.moveTo(self.points[0])
-                if self.selected:
-                    self.draw_vertex(vrtx_path, 0)
+        base_path = self.make_path()
+        line_path = QtGui.QPainterPath(base_path)
+        vrtx_path = QtGui.QPainterPath()
 
-                # Small improvement to start at the 2nd point and technically correct
-                for i, p in enumerate(self.points[1:], start=1):
-                    line_path.lineTo(p)
-                    if self.selected:
-                        self.draw_vertex(vrtx_path, i)
+        highlight_idx = self._highlight_index
 
-            elif self.shape_type == "point":
-                assert len(self.points) == 1
-                self.draw_vertex(vrtx_path, 0)
+        if self.shape_type == "point":
+            assert len(self.points) == 1
+            self.draw_vertex(vrtx_path, 0)
+        elif self.shape_type == "rectangle":
+            if self.selected or highlight_idx is not None:
+                for i in range(len(self.points)):
+                    self.draw_vertex(vrtx_path, i)
+        elif self.shape_type == "circle":
+            if self.selected or highlight_idx is not None:
+                for i in range(len(self.points)):
+                    self.draw_vertex(vrtx_path, i)
+        elif self.shape_type == "linestrip":
+            if self.selected:
+                for i in range(len(self.points)):
+                    self.draw_vertex(vrtx_path, i)
+            elif highlight_idx is not None:
+                self.draw_vertex(vrtx_path, highlight_idx)
+        else:
+            # polygon / other shapes
+            drawn_indices = set()
+
+            def add_vertex(idx):
+                if idx is None or idx < 0 or idx >= len(self.points):
+                    return
+                if idx in drawn_indices:
+                    return
+                self.draw_vertex(vrtx_path, idx)
+                drawn_indices.add(idx)
+
+            add_vertex(0)
+            if self.selected:
+                for idx in range(len(self.points)):
+                    add_vertex(idx)
             else:
-                line_path.moveTo(self.points[0])
-                # Uncommenting the following line will draw 2 paths
-                # for the 1st vertex, and make it non-filled, which
-                # may be desirable.
-                self.draw_vertex(vrtx_path, 0)
+                add_vertex(highlight_idx)
 
-                # Small improvement to start at the 2nd point and technically correct
-                for i, p in enumerate(self.points[1:], start=1):
-                    line_path.lineTo(p)
-                    if self.selected:
-                        self.draw_vertex(vrtx_path, i)
-
-                if self.is_closed():
-                    # Properly close the path
-                    line_path.closeSubpath()
-
-            painter.drawPath(line_path)
-            painter.drawPath(vrtx_path)
-            if self._vertex_fill_color is not None:
-                painter.fillPath(vrtx_path, self._vertex_fill_color)
-            if self.fill:
-                color = self.select_fill_color if self.selected else self.fill_color
-                color.setAlpha(self.fill_opacity)
-                painter.fillPath(line_path, color)
+        painter.drawPath(line_path)
+        painter.drawPath(vrtx_path)
+        if self._vertex_fill_color is not None:
+            painter.fillPath(vrtx_path, self._vertex_fill_color)
+        if self.fill:
+            fill_color = self.select_fill_color if self.selected else self.fill_color
+            fill_color.setAlpha(self.fill_opacity)
+            painter.fillPath(line_path, fill_color)
 
     def draw_vertex(self, path, i):
         """Draw a vertex"""
@@ -287,8 +303,105 @@ class Shape:
                 post_i = i
         return post_i
 
+    def nearest_edge_with_holes(self, point, epsilon):
+        """Find nearest edge on outer ring or any hole.
+
+        Returns:
+            tuple | int | None: (index, hole_idx) if a hole edge is closest;
+                                 index (int) for outer ring if closest;
+                                 None if nothing within epsilon.
+        """
+        # Outer ring first (keep backward-compatible precision)
+        best_dist_sq = (epsilon ** 2)
+        best = None  # int for outer, (idx, hole_idx) for hole
+
+        for i in range(len(self.points)):
+            line = [self.points[i - 1], self.points[i]]
+            d = utils.squared_distance_to_line(point, line)
+            dsq = d ** 2
+            if dsq <= best_dist_sq:
+                best_dist_sq = dsq
+                best = i
+
+        # Check holes
+        try:
+            holes = None
+            if isinstance(self.other_data, dict):
+                holes = self.other_data.get("holes")
+            if holes:
+                for hole_idx, hole in enumerate(holes):
+                    if not hole or len(hole) < 2:
+                        continue
+                    # Normalize to QPointF sequence
+                    qpts = []
+                    for hp in hole:
+                        if hasattr(hp, 'x'):
+                            qpts.append(hp)
+                        else:
+                            qpts.append(QtCore.QPointF(float(hp[0]), float(hp[1])))
+                    for j in range(len(qpts)):
+                        line = [qpts[j - 1], qpts[j]]
+                        d = utils.squared_distance_to_line(point, line)
+                        dsq = d ** 2
+                        if dsq <= best_dist_sq:
+                            best_dist_sq = dsq
+                            best = (j, hole_idx)
+        except Exception:
+            pass
+
+        return best
+
+    def insert_point_into_hole(self, hole_idx, index, point):
+        """Insert a point into the specified hole ring at index.
+
+        Args:
+            hole_idx (int): which hole ring
+            index (int): insertion index (like Shape.insert_point semantics)
+            point (QPointF): point to insert
+        """
+        if not isinstance(self.other_data, dict):
+            return
+        holes = self.other_data.get("holes")
+        if not holes or hole_idx < 0 or hole_idx >= len(holes):
+            return
+        ring = holes[hole_idx]
+        if not isinstance(ring, list):
+            return
+
+        # Keep the same element type as the ring currently uses
+        if len(ring) > 0 and hasattr(ring[0], 'x'):
+            insert_val = point
+        else:
+            insert_val = [float(point.x()), float(point.y())]
+
+        # Index semantics mirroring outer ring behavior
+        if index < 0:
+            index = 0
+        if index > len(ring):
+            index = len(ring)
+        ring.insert(index, insert_val)
+        self.invalidate_path_cache()
+
     def contains_point(self, point):
         """Check if shape contains a point"""
+        # Special handling: background invert polygon should be selectable even through holes
+        try:
+            if (
+                self.shape_type == "polygon"
+                and self.is_closed()
+                and isinstance(self.other_data, dict)
+                and self.other_data.get("select_through_holes")
+            ):
+                if not self.points:
+                    return False
+                outer_path = QtGui.QPainterPath(self.points[0])
+                for p in self.points[1:]:
+                    outer_path.lineTo(p)
+                outer_path.closeSubpath()
+                return outer_path.contains(point)
+        except Exception:
+            # Fallback to default behavior if anything goes wrong
+            pass
         return self.make_path().contains(point)
 
     def get_circle_rect_from_line(self, line):
@@ -303,20 +416,61 @@ class Shape:
 
     def make_path(self):
         """Create a path from shape"""
+        if not self.points:
+            return QtGui.QPainterPath()
+        if not self._path_cache_dirty and self._path_cache is not None:
+            return self._path_cache
+
         if self.shape_type == "rectangle":
             path = QtGui.QPainterPath()
             if len(self.points) == 2:
                 rectangle = self.get_rect_from_line(*self.points)
-                path.addRect(rectangle)
+                if rectangle is not None:
+                    path.addRect(rectangle)
         elif self.shape_type == "circle":
             path = QtGui.QPainterPath()
             if len(self.points) == 2:
                 rectangle = self.get_circle_rect_from_line(self.points)
-                path.addEllipse(rectangle)
+                if rectangle is not None:
+                    path.addEllipse(rectangle)
         else:
+            # polygon / linestrip 共用此分支
+            # points 至少有 1 个，提前保障
             path = QtGui.QPainterPath(self.points[0])
             for p in self.points[1:]:
                 path.lineTo(p)
+
+            # 对封闭多边形：闭合并支持洞（OddEven 填充规则）
+            if self.shape_type == "polygon" and self.is_closed():
+                path.closeSubpath()
+                holes = None
+                if isinstance(self.other_data, dict):
+                    holes = self.other_data.get("holes")
+                if holes:
+                    path.setFillRule(QtCore.Qt.OddEvenFill)
+                    try:
+                        for hole in holes:
+                            if not hole or len(hole) < 3:
+                                continue
+                            # hole 点既可为 [x, y] 数组，也可为 QPointF
+                            first = hole[0]
+                            if hasattr(first, 'x'):
+                                path.moveTo(first)
+                                iterable = hole[1:]
+                            else:
+                                path.moveTo(QtCore.QPointF(float(first[0]), float(first[1])))
+                                iterable = hole[1:]
+                            for hp in iterable:
+                                if hasattr(hp, 'x'):
+                                    path.lineTo(hp)
+                                else:
+                                    path.lineTo(QtCore.QPointF(float(hp[0]), float(hp[1])))
+                            path.closeSubpath()
+                    except Exception:
+                        pass
+
+        self._path_cache = path
+        self._path_cache_dirty = False
         return path
 
     def bounding_rect(self):
@@ -326,10 +480,40 @@ class Shape:
     def move_by(self, offset):
         """Move all points by an offset"""
         self.points = [p + offset for p in self.points]
+        self.invalidate_path_cache()
+        # 若存在洞（holes），整形拖动时需同步平移洞坐标
+        try:
+            if isinstance(self.other_data, dict) and self.other_data.get("holes"):
+                moved_holes = []
+                for hole in self.other_data.get("holes"):
+                    if not hole:
+                        moved_holes.append(hole)
+                        continue
+                    new_hole = []
+                    for hp in hole:
+                        if hasattr(hp, 'x'):
+                            new_hole.append(hp + offset)
+                        else:
+                            # 兼容 [x, y] 形式
+                            try:
+                                new_hole.append([
+                                    float(hp[0]) + float(offset.x()),
+                                    float(hp[1]) + float(offset.y()),
+                                ])
+                            except Exception:
+                                # 数据异常则跳过该点
+                                continue
+                    moved_holes.append(new_hole)
+                self.other_data["holes"] = moved_holes
+                self.invalidate_path_cache()
+        except Exception:
+            # 忽略洞平移中的异常，避免影响拖动
+            pass
 
     def move_vertex_by(self, i, offset):
         """Move a specific vertex by an offset"""
         self.points[i] = self.points[i] + offset
+        self.invalidate_path_cache()
 
     def highlight_vertex(self, i, action):
         """Highlight a vertex appropriately based on the current action
